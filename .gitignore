@@ -1,0 +1,9 @@
+LanShare/bin/
+LanShare/obj/
+LanShare/publish/
+LanShare/.vs/
+LanShare/.idea/
+LanShare/*.user
+LanShare/*.suo
+LanShare/*.log
+LanShare/bench-results/

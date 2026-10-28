@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "o0x0fxU7/0E=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\GowsikanNakuleswaran\\OneDrive - MindOxTechno\\Documents\\My\\LanShare\\LanShare\\bench\\LanShare.Bench\\LanShare.Bench.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\GowsikanNakuleswaran\\.nuget\\packages\\k4os.compression.lz4\\1.3.8\\k4os.compression.lz4.1.3.8.nupkg.sha512",
+    "C:\\Users\\GowsikanNakuleswaran\\.nuget\\packages\\system.io.hashing\\9.0.22\\system.io.hashing.9.0.22.nupkg.sha512"
+  ],
+  "logs": []
+}

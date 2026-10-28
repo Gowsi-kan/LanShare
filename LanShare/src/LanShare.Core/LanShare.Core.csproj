@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="System.IO.Hashing" Version="9.0.*" />
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.*" />
+  </ItemGroup>
+</Project>
