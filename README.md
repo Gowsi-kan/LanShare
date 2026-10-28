@@ -182,4 +182,4 @@ Issues and pull requests are welcome. Before opening a PR, run the benchmark aga
 
 ## 📄 License
 
-Add your license here (e.g. MIT) and include a `LICENSE` file in the repo root.
+Released under the [MIT License](LICENSE).
