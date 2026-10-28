@@ -1,9 +1,86 @@
-LanShare/bin/
-LanShare/obj/
-LanShare/publish/
-LanShare/.vs/
-LanShare/.idea/
-LanShare/*.user
-LanShare/*.suo
-LanShare/*.log
-LanShare/bench-results/
+# ---- Build output ----
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+publish/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# ---- Visual Studio ----
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.rsuser
+launchSettings.json.user
+*.VC.db
+*.VC.VC.opendb
+
+# ---- JetBrains Rider / ReSharper ----
+.idea/
+*.sln.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# ---- VS Code ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ---- NuGet ----
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+project.lock.json
+.nuget/
+
+# ---- Test / coverage / benchmarks ----
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+BenchmarkDotNet.Artifacts/
+
+# ---- Profiling / diagnostics ----
+*.dmp
+*.pdb
+*.nettrace
+*.etl
+*.diagsession
+
+# ---- Secrets / local config ----
+*.pfx
+*.snk
+appsettings.Development.json
+secrets.json
+.env
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- Misc ----
+*.log
+*.tmp
+*.bak
+*.swp
+~$*
