@@ -13,6 +13,7 @@ public enum Phase
     Failed,
     Cancelled,
     Declined,
+    Paused,
 }
 
 public enum Decision : byte

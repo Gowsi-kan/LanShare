@@ -3,6 +3,7 @@ using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LanShare.Core;
+using LanShare.Web;
 
 namespace LanShare.ViewModels;
 
@@ -19,6 +20,9 @@ public sealed partial class TransferViewModel : ObservableObject
     readonly IncomingJob? _job;
     readonly CancellationTokenSource? _cts;
 
+    readonly bool _web;
+    readonly Action? _onCancel;
+
     long _startTs,
         _lastTs,
         _startBytes,
@@ -29,7 +33,7 @@ public sealed partial class TransferViewModel : ObservableObject
         _final;
 
     public SendPlan? Plan { get; private init; }
-    public bool IsIncoming => _job is not null;
+    public bool IsIncoming => _job is not null || _web;
     public string DirectionGlyph => IsIncoming ? "↓" : "↑";
     public string Title { get; private init; } = "";
     public string Subtitle { get; private init; } = "";
@@ -77,13 +81,17 @@ public sealed partial class TransferViewModel : ObservableObject
         MainViewModel owner,
         TransferState state,
         IncomingJob? job,
-        CancellationTokenSource? cts
+        CancellationTokenSource? cts,
+        bool web = false,
+        Action? onCancel = null
     )
     {
         _owner = owner;
         _state = state;
         _job = job;
         _cts = cts;
+        _web = web;
+        _onCancel = onCancel;
     }
 
     public static TransferViewModel Incoming(MainViewModel owner, IncomingJob job)
@@ -115,6 +123,17 @@ public sealed partial class TransferViewModel : ObservableObject
         };
         vm.Refresh();
         _ = Task.Run(() => session.RunAsync(cts.Token));
+        return vm;
+    }
+
+    public static TransferViewModel Web(MainViewModel owner, WebUpload up)
+    {
+        var vm = new TransferViewModel(owner, up.State, null, null, web: true, onCancel: up.Cancel)
+        {
+            Title = $"{up.FileName} · {Format.Bytes(up.State.TotalBytes)}",
+            Subtitle = $"From phone / browser ({up.Peer})",
+        };
+        vm.Refresh();
         return vm;
     }
 
@@ -197,11 +216,13 @@ public sealed partial class TransferViewModel : ObservableObject
             Phase.Failed => ($"Failed: {s.Error}", Red),
             Phase.Cancelled => ("Cancelled", Grey),
             Phase.Declined => ("Declined", Grey),
+            Phase.Paused => ("Paused, waiting for the phone", Amber),
             _ => ("", Grey),
         };
 
         IsAwaiting = phase == Phase.AwaitingYou;
-        IsActive = phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring;
+        IsActive =
+            phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring or Phase.Paused;
         IsFinished = phase is Phase.Completed or Phase.Failed or Phase.Cancelled or Phase.Declined;
         CanRetry = !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
         if (IsFinished)
@@ -212,6 +233,7 @@ public sealed partial class TransferViewModel : ObservableObject
     {
         _cts?.Cancel();
         _job?.Cancel();
+        _onCancel?.Invoke();
     }
 
     [RelayCommand]

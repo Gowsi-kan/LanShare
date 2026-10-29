@@ -98,4 +98,17 @@ public partial class MainWindow : Window
 
     static List<string> ToPaths(IEnumerable<IStorageItem> items) =>
         items.Select(i => i.TryGetLocalPath()).OfType<string>().ToList();
+
+    PhoneAccessWindow? _phoneWindow;
+
+    void OnPhoneAccess(object? sender, RoutedEventArgs e)
+    {
+        if (_phoneWindow is { IsVisible: true })
+        {
+            _phoneWindow.Activate();
+            return;
+        }
+        _phoneWindow = new PhoneAccessWindow { DataContext = Vm.Phone };
+        _phoneWindow.Show(this);
+    }
 }

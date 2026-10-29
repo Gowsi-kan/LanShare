@@ -243,6 +243,10 @@
                                     Classes="ghost"
                                     Click="OnAddFolder"
                                     Content="Add folder…" />
+                                <Button
+                                    Classes="ghost"
+                                    Click="OnPhoneAccess"
+                                    Content="Phone…" />
                             </StackPanel>
                         </Grid>
                     </Border>

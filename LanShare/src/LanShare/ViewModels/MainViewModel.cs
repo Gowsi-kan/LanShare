@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<TransferViewModel> Transfers { get; } = [];
 
     public string DeviceName { get; }
+    public PhoneAccessViewModel Phone { get; }
     public string ListenText => $"Listening · TCP {_service.Port} · UDP {Protocol.DiscoveryPort}";
 
     [ObservableProperty, NotifyPropertyChangedFor(nameof(TargetText))]
@@ -89,6 +90,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _discovery.PeersChanged += () =>
             Dispatcher.UIThread.Post(() => SyncPeers(_discovery.Snapshot));
         _discovery.Start();
+
+        Phone = new PhoneAccessViewModel(() => DownloadDir, DeviceName);
+        Phone.UploadStarted += up =>
+            Dispatcher.UIThread.Post(() => Transfers.Insert(0, TransferViewModel.Web(this, up)));
+
         _ = RefreshFirewallAsync();
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -327,6 +333,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _timer.Stop();
         _discovery.Dispose();
+        Phone.Dispose();
         foreach (var t in Transfers)
             t.CancelQuietly();
         try
