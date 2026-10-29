@@ -15,12 +15,13 @@ namespace LanShare.Web;
 
 public sealed record SharedFile(string Id, string Path, string Name, long Size);
 
-/// <summary>One browser upload (survives reconnects/resumes). State is shown in the desktop UI.</summary>
+/// <summary>One browser transfer (upload from phone or download to phone). State is shown in the desktop UI.</summary>
 public sealed class WebUpload
 {
     public required string FileName { get; init; }
     public required string Peer { get; init; }
     public required TransferState State { get; init; }
+    public bool IsDownload { get; init; }
     internal CancellationTokenSource Cts { get; } = new();
     internal Action? OnCancel { get; set; }
 
@@ -39,6 +40,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 {
     public const int DefaultPort = 45480;
     const int MaxConcurrentUploads = 4;
+    const int SliceBytes = 4 * 1024 * 1024; // download slice: progress + cancel granularity, still sendfile-style
 
     sealed class UploadSlot(WebUpload upload, string part)
     {
@@ -47,10 +49,17 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
         public SemaphoreSlim Busy { get; } = new(1, 1);
     }
 
+    sealed class DownloadSlot(WebUpload upload)
+    {
+        public WebUpload Upload { get; } = upload;
+        public int Active; // concurrent requests for this download
+    }
+
     readonly record struct UploadQuery(string Cid, string Name, long Size, long Offset, string Key);
 
     readonly ConcurrentDictionary<string, SharedFile> _shared = new();
     readonly Dictionary<string, UploadSlot> _slots = new();
+    readonly Dictionary<string, DownloadSlot> _downloads = new();
     readonly object _slotsGate = new();
     readonly SemaphoreSlim _uploadGate = new(MaxConcurrentUploads);
     WebApplication? _app;
@@ -59,6 +68,8 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
     public int Port { get; private set; }
     public string Token { get; private set; } = NewToken();
     public bool IsRunning => _app is not null;
+
+    /// <summary>Raised for every new browser transfer, uploads and downloads (see <see cref="WebUpload.IsDownload"/>).</summary>
     public event Action<WebUpload>? UploadStarted;
 
     public IReadOnlyList<SharedFile> Shared =>
@@ -104,17 +115,21 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
         var app = _app;
         _app = null;
 
-        List<UploadSlot> slots;
+        List<WebUpload> all;
         lock (_slotsGate)
         {
-            slots = _slots.Values.ToList();
+            all = _slots
+                .Values.Select(s => s.Upload)
+                .Concat(_downloads.Values.Select(d => d.Upload))
+                .ToList();
             _slots.Clear();
+            _downloads.Clear();
         }
-        foreach (var s in slots)
+        foreach (var up in all)
         {
-            s.Upload.Cts.Cancel();
-            s.Upload.State.Error = "Phone access was stopped.";
-            s.Upload.State.Phase = Phase.Cancelled; // partial file is kept; re-sending the same file resumes it
+            up.Cts.Cancel();
+            up.State.Error = "Phone access was stopped.";
+            up.State.Phase = Phase.Cancelled; // partial uploads are kept; re-sending the same file resumes it
         }
 
         if (app is not null)
@@ -194,8 +209,10 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
         app.MapGet(
             "/api/info",
-            () =>
-                Results.Json(
+            (HttpContext ctx) =>
+            {
+                var cid = ctx.Request.Query["cid"].ToString();
+                return Results.Json(
                     new
                     {
                         device = deviceName,
@@ -205,25 +222,17 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                             id = f.Id,
                             name = f.Name,
                             size = f.Size,
+                            dl = DownloadInfo(cid, f.Id),
                         }),
                     }
-                )
-        );
-
-        app.MapGet(
-            "/api/files/{id}",
-            (string id) =>
-            {
-                if (!_shared.TryGetValue(id, out var f) || !File.Exists(f.Path))
-                    return Results.NotFound();
-                // physical-file result: sendfile-style streaming + HTTP Range (pause/resume in the phone's download manager)
-                return Results.File(
-                    f.Path,
-                    "application/octet-stream",
-                    f.Name,
-                    enableRangeProcessing: true
                 );
             }
+        );
+
+        app.MapMethods(
+            "/api/files/{id}",
+            new[] { "GET", "HEAD" },
+            (HttpContext ctx, string id) => DownloadAsync(ctx, id)
         );
 
         app.MapGet(
@@ -260,6 +269,215 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                 return Results.Ok();
             }
         );
+    }
+
+    // ------------------------------------------------------------ download (PC -> phone)
+
+    object? DownloadInfo(string cid, string fileId)
+    {
+        if (cid.Length is 0 or > 64)
+            return null;
+        DownloadSlot? slot;
+        lock (_slotsGate)
+            _downloads.TryGetValue($"{cid}|{fileId}", out slot);
+        if (slot is null)
+            return null;
+        var s = slot.Upload.State;
+        return new
+        {
+            done = s.DoneBytes,
+            total = s.TotalBytes,
+            phase = s.Phase.ToString().ToLowerInvariant(),
+        };
+    }
+
+    async Task DownloadAsync(HttpContext ctx, string id)
+    {
+        if (!_shared.TryGetValue(id, out var f) || !File.Exists(f.Path))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        long size;
+        try
+        {
+            size = new FileInfo(f.Path).Length;
+        }
+        catch (IOException)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        long start = 0,
+            end = size - 1;
+        var rangeHeader = ctx.Request.Headers["Range"].ToString();
+        bool partial = rangeHeader.Length > 0;
+        if (partial && (size == 0 || !TryParseRange(rangeHeader, size, out start, out end)))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status416RangeNotSatisfiable;
+            ctx.Response.Headers["Content-Range"] = $"bytes */{size}";
+            return;
+        }
+        long length = size == 0 ? 0 : end - start + 1;
+
+        ctx.Response.StatusCode = partial
+            ? StatusCodes.Status206PartialContent
+            : StatusCodes.Status200OK;
+        ctx.Response.ContentType = "application/octet-stream";
+        ctx.Response.ContentLength = length;
+        ctx.Response.Headers["Accept-Ranges"] = "bytes";
+        ctx.Response.Headers["Content-Disposition"] = AttachmentHeader(f.Name);
+        if (partial)
+            ctx.Response.Headers["Content-Range"] = $"bytes {start}-{end}/{size}";
+        if (HttpMethods.IsHead(ctx.Request.Method) || length == 0)
+            return;
+
+        // tiny range probes (browsers do these) are not shown as transfers
+        DownloadSlot? slot = null;
+        if (length >= (1 << 20) || length == size)
+        {
+            var peer = ctx.Connection.RemoteIpAddress is { } ip ? ip.MapToIPv4OrSelf() : "?";
+            var cid = ctx.Request.Query["cid"].ToString();
+            slot = GetDownloadSlot(cid.Length is 0 or > 64 ? peer : cid, f, size, peer);
+            if (Interlocked.Increment(ref slot.Active) == 1)
+                slot.Upload.State.SetDone(start);
+            slot.Upload.State.Error = null;
+            slot.Upload.State.Phase = Phase.Transferring;
+        }
+        var state = slot?.Upload.State;
+
+        using var lcts = CancellationTokenSource.CreateLinkedTokenSource(
+            ctx.RequestAborted,
+            slot?.Upload.Cts.Token ?? CancellationToken.None
+        );
+        var ct = lcts.Token;
+
+        try
+        {
+            long pos = start,
+                left = length;
+            while (left > 0)
+            {
+                int n = (int)Math.Min(left, SliceBytes);
+                await ctx.Response.SendFileAsync(f.Path, pos, n, ct);
+                pos += n;
+                left -= n;
+                if (state is not null)
+                {
+                    state.AddBytes(n);
+                    state.CurrentFile = f.Name;
+                }
+            }
+            if (state is not null && pos >= size)
+                state.Phase = Phase.Completed;
+        }
+        catch (Exception e)
+            when (e
+                    is OperationCanceledException
+                        or IOException
+                        or BadHttpRequestException
+                        or ConnectionResetException
+            )
+        {
+            // phone stopped / connection lost / cancelled from the PC: the finally block marks it paused
+        }
+        finally
+        {
+            if (
+                slot is not null
+                && Interlocked.Decrement(ref slot.Active) == 0
+                && slot.Upload.State.Phase == Phase.Transferring
+            )
+                slot.Upload.State.Phase = Phase.Paused;
+        }
+    }
+
+    DownloadSlot GetDownloadSlot(string client, SharedFile f, long size, string peer)
+    {
+        var key = $"{client}|{f.Id}";
+        WebUpload? started = null;
+        DownloadSlot slot;
+        lock (_slotsGate)
+        {
+            if (!_downloads.TryGetValue(key, out slot!) || IsTerminal(slot.Upload.State.Phase))
+            {
+                var state = new TransferState(size, 1) { Phase = Phase.Paused };
+                var up = new WebUpload
+                {
+                    FileName = f.Name,
+                    Peer = peer,
+                    State = state,
+                    IsDownload = true,
+                };
+                slot = new DownloadSlot(up);
+                var captured = slot;
+                up.OnCancel = () =>
+                {
+                    captured.Upload.State.Phase = Phase.Cancelled;
+                    lock (_slotsGate)
+                    {
+                        if (
+                            _downloads.TryGetValue(key, out var cur)
+                            && ReferenceEquals(cur, captured)
+                        )
+                            _downloads.Remove(key);
+                    }
+                };
+                _downloads[key] = slot;
+                started = up;
+            }
+        }
+        if (started is not null)
+            UploadStarted?.Invoke(started);
+        return slot;
+    }
+
+    static bool IsTerminal(Phase p) =>
+        p is Phase.Completed or Phase.Failed or Phase.Cancelled or Phase.Declined;
+
+    static bool TryParseRange(string header, long size, out long start, out long end)
+    {
+        start = 0;
+        end = size - 1;
+        if (
+            !header.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase) || header.Contains(',')
+        )
+            return false;
+        var spec = header[6..].Trim();
+        int dash = spec.IndexOf('-');
+        if (dash < 0)
+            return false;
+        var a = spec[..dash];
+        var b = spec[(dash + 1)..];
+        if (a.Length == 0)
+        {
+            if (!long.TryParse(b, out var n) || n <= 0)
+                return false;
+            start = Math.Max(0, size - n);
+        }
+        else
+        {
+            if (!long.TryParse(a, out start))
+                return false;
+            if (b.Length > 0)
+            {
+                if (!long.TryParse(b, out end))
+                    return false;
+                end = Math.Min(end, size - 1);
+            }
+        }
+        return start >= 0 && start <= end && start < size;
+    }
+
+    static string AttachmentHeader(string name)
+    {
+        var ascii = new string(
+            name.Select(c => c is >= ' ' and <= '~' && c != '"' && c != '\\' && c != ';' ? c : '_')
+                .ToArray()
+        );
+        return $"attachment; filename=\"{ascii}\"; filename*=UTF-8''{Uri.EscapeDataString(name)}";
     }
 
     // ------------------------------------------------------------ upload (phone -> PC)

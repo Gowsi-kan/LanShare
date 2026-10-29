@@ -1,12 +1,10 @@
-﻿using Avalonia.Media.Imaging;
+﻿using System.Collections.ObjectModel;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LanShare.Core;
 using LanShare.Web;
 using QRCoder;
-using System.Collections.ObjectModel;
-using System.Net.NetworkInformation;
-using static QRCoder.PayloadGenerator;
 
 namespace LanShare.ViewModels;
 
@@ -25,14 +23,28 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<string> Addresses { get; } = [];
     public ObservableCollection<SharedFileItem> Shared { get; } = [];
+    public ObservableCollection<TransferViewModel> Transfers { get; } = [];
 
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(ToggleText))] bool _isRunning;
-    [ObservableProperty] bool _busy;
-    [ObservableProperty] string _url = "";
-    [ObservableProperty] Bitmap? _qr;
-    [ObservableProperty] string _status = "Phone access is off.";
-    [ObservableProperty] string _firewallText = "";
-    [ObservableProperty] string? _selectedAddress;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ToggleText))]
+    bool _isRunning;
+
+    [ObservableProperty]
+    bool _busy;
+
+    [ObservableProperty]
+    string _url = "";
+
+    [ObservableProperty]
+    Bitmap? _qr;
+
+    [ObservableProperty]
+    string _status = "Phone access is off.";
+
+    [ObservableProperty]
+    string _firewallText = "";
+
+    [ObservableProperty]
+    string? _selectedAddress;
 
     public string ToggleText => IsRunning ? "Stop phone access" : "Start phone access";
     public bool HasMultipleAddresses => Addresses.Count > 1;
@@ -48,7 +60,8 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
     [RelayCommand]
     async Task ToggleAsync()
     {
-        if (Busy) return;
+        if (Busy)
+            return;
         Busy = true;
         try
         {
@@ -64,14 +77,16 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
             {
                 await _server.StartAsync();
                 Addresses.Clear();
-                foreach (var a in LanAddress.Candidates()) Addresses.Add(a);
+                foreach (var a in LanAddress.Candidates())
+                    Addresses.Add(a);
                 OnPropertyChanged(nameof(HasMultipleAddresses));
                 IsRunning = true;
                 SelectedAddress = Addresses.FirstOrDefault();
                 BuildUrl();
-                Status = Addresses.Count == 0
-                    ? "No network address found. Connect to Wi-Fi / LAN first."
-                    : "Running. Scan the QR code with the phone camera (same Wi-Fi).";
+                Status =
+                    Addresses.Count == 0
+                        ? "No network address found. Connect to Wi-Fi / LAN first."
+                        : "Running. Scan the QR code with the phone camera (same Wi-Fi).";
             }
         }
         catch (Exception e)
@@ -87,7 +102,8 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
     [RelayCommand]
     async Task OpenFirewallAsync()
     {
-        if (!IsRunning) return;
+        if (!IsRunning)
+            return;
         FirewallText = "Waiting for the administrator prompt…";
         var r = await FirewallHelper.OpenWebPortAsync(_server.Port);
         FirewallText = r.Message;
@@ -95,7 +111,8 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
 
     public void AddShared(IEnumerable<string> paths)
     {
-        foreach (var p in paths) _server.AddShared(p);
+        foreach (var p in paths)
+            _server.AddShared(p);
         RefreshShared();
     }
 
@@ -108,7 +125,8 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
     void RefreshShared()
     {
         Shared.Clear();
-        foreach (var f in _server.Shared) Shared.Add(new SharedFileItem(f, Remove));
+        foreach (var f in _server.Shared)
+            Shared.Add(new SharedFileItem(f, Remove));
     }
 
     void BuildUrl()
@@ -137,6 +155,10 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        try { Task.Run(() => _server.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(2)); } catch { }
+        try
+        {
+            Task.Run(() => _server.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(2));
+        }
+        catch { }
     }
 }

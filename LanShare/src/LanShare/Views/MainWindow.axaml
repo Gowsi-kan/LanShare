@@ -3,6 +3,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:core="using:LanShare.Core"
+    xmlns:views="using:LanShare.Views"
     xmlns:vm="using:LanShare.ViewModels"
     Title="LanShare"
     Width="1120"
@@ -305,126 +306,11 @@
                         Classes="lbl"
                         Text="TRANSFERS" />
 
-                    <ScrollViewer Grid.Row="3">
+                    <ScrollViewer Grid.Row="3" Padding="0,0,12,0">
                         <ItemsControl ItemsSource="{Binding Transfers}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:TransferViewModel">
-                                    <Border
-                                        Margin="0,0,0,8"
-                                        Padding="14"
-                                        Classes="card">
-                                        <StackPanel Spacing="10">
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                                <StackPanel Spacing="2">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock
-                                                            FontSize="16"
-                                                            Foreground="#4C8DFF"
-                                                            Text="{Binding DirectionGlyph}" />
-                                                        <TextBlock
-                                                            FontSize="15"
-                                                            FontWeight="SemiBold"
-                                                            Text="{Binding Title}" />
-                                                    </StackPanel>
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding Subtitle}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                                <Border
-                                                    Grid.Column="1"
-                                                    MaxWidth="300"
-                                                    Padding="10,4"
-                                                    VerticalAlignment="Top"
-                                                    Background="#1F2430"
-                                                    CornerRadius="999">
-                                                    <TextBlock
-                                                        FontSize="12"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="{Binding PhaseBrush}"
-                                                        Text="{Binding PhaseText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </Border>
-                                            </Grid>
-
-                                            <ProgressBar
-                                                Height="8"
-                                                Foreground="{Binding PhaseBrush}"
-                                                Maximum="100"
-                                                Minimum="0"
-                                                Value="{Binding Percent}" />
-
-                                            <UniformGrid Columns="4">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="TRANSFERRED" />
-                                                    <TextBlock Classes="val" Text="{Binding Transferred}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="SPEED" />
-                                                    <TextBlock Classes="val" Text="{Binding SpeedText}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="ETA" />
-                                                    <TextBlock Classes="val" Text="{Binding EtaText}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="LINK" />
-                                                    <TextBlock
-                                                        Classes="val"
-                                                        Text="{Binding LinkText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                            </UniformGrid>
-
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                                <StackPanel VerticalAlignment="Center" Spacing="2">
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding FilesText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding CurrentFile}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                                <StackPanel
-                                                    Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    Spacing="8">
-                                                    <Button
-                                                        Classes="primary small"
-                                                        Command="{Binding AcceptCommand}"
-                                                        Content="Accept"
-                                                        IsVisible="{Binding IsAwaiting}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding DeclineCommand}"
-                                                        Content="Decline"
-                                                        IsVisible="{Binding IsAwaiting}" />
-                                                    <Button
-                                                        Classes="danger small"
-                                                        Command="{Binding CancelCommand}"
-                                                        Content="Cancel"
-                                                        IsVisible="{Binding IsActive}" />
-                                                    <Button
-                                                        Classes="primary small"
-                                                        Command="{Binding RetryCommand}"
-                                                        Content="Retry / Resume"
-                                                        IsVisible="{Binding CanRetry}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding OpenFolderCommand}"
-                                                        Content="Open folder"
-                                                        IsVisible="{Binding IsFinished}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding DismissCommand}"
-                                                        Content="Dismiss"
-                                                        IsVisible="{Binding IsFinished}" />
-                                                </StackPanel>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
+                                    <views:TransferCardView />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

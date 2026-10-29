@@ -22,6 +22,7 @@ public sealed partial class TransferViewModel : ObservableObject
 
     readonly bool _web;
     readonly Action? _onCancel;
+    readonly bool _webDownload;
 
     long _startTs,
         _lastTs,
@@ -33,7 +34,7 @@ public sealed partial class TransferViewModel : ObservableObject
         _final;
 
     public SendPlan? Plan { get; private init; }
-    public bool IsIncoming => _job is not null || _web;
+    public bool IsIncoming => _job is not null || (_web && !_webDownload);
     public string DirectionGlyph => IsIncoming ? "↓" : "↑";
     public string Title { get; private init; } = "";
     public string Subtitle { get; private init; } = "";
@@ -77,13 +78,17 @@ public sealed partial class TransferViewModel : ObservableObject
     [ObservableProperty]
     bool _isFinished;
 
+    [ObservableProperty]
+    bool _canOpenFolder;
+
     TransferViewModel(
         MainViewModel owner,
         TransferState state,
         IncomingJob? job,
         CancellationTokenSource? cts,
         bool web = false,
-        Action? onCancel = null
+        Action? onCancel = null,
+        bool webDownload = false
     )
     {
         _owner = owner;
@@ -92,6 +97,7 @@ public sealed partial class TransferViewModel : ObservableObject
         _cts = cts;
         _web = web;
         _onCancel = onCancel;
+        _webDownload = webDownload;
     }
 
     public static TransferViewModel Incoming(MainViewModel owner, IncomingJob job)
@@ -128,10 +134,20 @@ public sealed partial class TransferViewModel : ObservableObject
 
     public static TransferViewModel Web(MainViewModel owner, WebUpload up)
     {
-        var vm = new TransferViewModel(owner, up.State, null, null, web: true, onCancel: up.Cancel)
+        var vm = new TransferViewModel(
+            owner,
+            up.State,
+            null,
+            null,
+            web: true,
+            onCancel: up.Cancel,
+            webDownload: up.IsDownload
+        )
         {
-            Title = $"{up.FileName} · {Format.Bytes(up.State.TotalBytes)}",
-            Subtitle = $"From phone / browser ({up.Peer})",
+            Title = up.FileName,
+            Subtitle = up.IsDownload
+                   ? $"{Format.Bytes(up.State.TotalBytes)} · to phone / browser ({up.Peer})"
+                   : $"{Format.Bytes(up.State.TotalBytes)} · from phone / browser ({up.Peer})",
         };
         vm.Refresh();
         return vm;
@@ -224,7 +240,9 @@ public sealed partial class TransferViewModel : ObservableObject
         IsActive =
             phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring or Phase.Paused;
         IsFinished = phase is Phase.Completed or Phase.Failed or Phase.Cancelled or Phase.Declined;
-        CanRetry = !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
+        CanRetry =
+            !_web && !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
+        CanOpenFolder = IsFinished && !_webDownload;
         if (IsFinished)
             _final = true;
     }

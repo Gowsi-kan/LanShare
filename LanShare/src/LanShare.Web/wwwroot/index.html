@@ -239,49 +239,76 @@
             cache: "no-store",
           });
 
-        // ---- downloads list (PC -> phone)
-        async function refresh() {
-          try {
-            const r = await api("/api/info");
-            if (r.status === 401) {
-              $("#msg").textContent =
-                "Session expired. Scan the QR code on the PC again.";
-              return;
-            }
-            const info = await r.json();
-            $("#msg").textContent = "";
-            $("#free").textContent = "PC free: " + fmt(info.free);
-            const box = $("#dls");
-            if (!info.files.length) {
-              box.textContent =
-                "Nothing shared yet. On the PC, open “Phone…” and add files to share.";
-              return;
-            }
-            box.textContent = "";
-            for (const f of info.files) {
-              const row = el("div", "item row");
-              const left = el("div");
-              left.append(
-                el("div", "name", f.name),
-                el("div", "meta", fmt(f.size)),
-              );
-              const a = el("a", "dl", "Download");
-              a.href =
-                "/api/files/" +
-                encodeURIComponent(f.id) +
-                "?t=" +
-                encodeURIComponent(TOKEN);
-              a.setAttribute("download", f.name);
-              row.append(left, a);
-              box.append(row);
-            }
-          } catch {
-            $("#msg").textContent =
-              "Cannot reach the PC. Check Wi-Fi and that phone access is running.";
+          // ---- downloads list (PC -> phone) with live progress reported by the PC
+          const dlRows = new Map();
+          let dlActive = false;
+
+          function makeDlRow(f) {
+              const root = el('div', 'item');
+              const top = el('div', 'row');
+              const left = el('div');
+              left.append(el('div', 'name', f.name), el('div', 'meta', fmt(f.size)));
+              const a = el('a', 'dl', 'Download');
+              a.href = '/api/files/' + encodeURIComponent(f.id) + '?cid=' + CID + '&t=' + encodeURIComponent(TOKEN);
+              a.setAttribute('download', f.name);
+              top.append(left, a);
+              const bar = el('div', 'bar'); const fill = el('i'); bar.append(fill);
+              const st = el('div', 'meta st');
+              bar.style.display = 'none'; st.style.display = 'none';
+              root.append(top, bar, st);
+              return { root, bar, fill, st, last: null };
           }
-        }
-        refresh();
-        setInterval(refresh, 5000);
+
+          function updateDl(r, f) {
+              const d = f.dl;
+              if (!d) { r.bar.style.display = 'none'; r.st.style.display = 'none'; r.root.className = 'item'; r.last = null; return; }
+              r.bar.style.display = ''; r.st.style.display = '';
+              r.fill.style.width = (d.total ? Math.min(100, d.done * 100 / d.total) : 100) + '%';
+              const now = performance.now();
+              let rate = 0;
+              if (r.last && d.phase === 'transferring') {
+                  const dt = (now - r.last.t) / 1000;
+                  if (dt > 0) rate = Math.max(0, (d.done - r.last.done) / dt);
+              }
+              r.last = { t: now, done: d.done };
+              if (d.phase === 'transferring') {
+                  dlActive = true; r.root.className = 'item';
+                  r.st.textContent = fmt(d.done) + ' / ' + fmt(d.total) + (rate > 0 ? ' · ' + fmt(rate) + '/s' : '');
+              } else if (d.phase === 'completed') {
+                  r.root.className = 'item ok'; r.st.textContent = 'Sent to this phone ✓';
+              } else if (d.phase === 'paused') {
+                  r.root.className = 'item'; r.st.textContent = 'Paused at ' + fmt(d.done) + ' / ' + fmt(d.total) + ' — tap Download to resume';
+              } else {
+                  r.root.className = 'item err'; r.st.textContent = d.phase;
+              }
+          }
+
+          async function refresh() {
+              try {
+                  const r = await api('/api/info?cid=' + CID);
+                  if (r.status === 401) { $('#msg').textContent = 'Session expired. Scan the QR code on the PC again.'; return; }
+                  const info = await r.json();
+                  $('#msg').textContent = '';
+                  $('#free').textContent = 'PC free: ' + fmt(info.free);
+                  const box = $('#dls');
+                  dlActive = false;
+                  if (!info.files.length) {
+                      box.textContent = 'Nothing shared yet. On the PC, open “Phone…” and add files to share.';
+                      dlRows.clear();
+                      return;
+                  }
+                  if (!dlRows.size) box.textContent = '';
+                  const seen = new Set();
+                  for (const f of info.files) {
+                      seen.add(f.id);
+                      let row = dlRows.get(f.id);
+                      if (!row) { row = makeDlRow(f); dlRows.set(f.id, row); box.append(row.root); }
+                      updateDl(row, f);
+                  }
+                  for (const [id, row] of dlRows) if (!seen.has(id)) { row.root.remove(); dlRows.delete(id); }
+              } catch { $('#msg').textContent = 'Cannot reach the PC. Check Wi-Fi and that phone access is running.'; }
+          }
+          (async function loop() { await refresh(); setTimeout(loop, dlActive ? 1000 : 4000); })();
 
         // ---- uploads (phone -> PC), sequential, resumable
         const queue = [];

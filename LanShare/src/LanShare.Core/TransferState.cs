@@ -46,6 +46,8 @@ public sealed class TransferState(long totalBytes, int totalFiles)
 
     public void AddBytes(long n) => Interlocked.Add(ref _done, n);
 
+    public void SetDone(long n) => Interlocked.Exchange(ref _done, n);
+
     public void AddSent(long raw, long wire)
     {
         Interlocked.Add(ref _sentRaw, raw);

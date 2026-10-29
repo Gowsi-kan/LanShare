@@ -25,6 +25,9 @@
 		<!-- embeds the files for use in XAML -->
 	</ItemGroup>
 	<ItemGroup>
+	  <Compile Update="Views\TransferCardView.axaml.cs">
+	    <DependentUpon>TransferCardView.axaml</DependentUpon>
+	  </Compile>
 	  <Compile Update="Views\PhoneAccessWindow.axaml.cs">
 	    <DependentUpon>PhoneAccessWindow.axaml</DependentUpon>
 	  </Compile>

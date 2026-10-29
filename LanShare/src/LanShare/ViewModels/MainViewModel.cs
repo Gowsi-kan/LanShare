@@ -93,7 +93,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         Phone = new PhoneAccessViewModel(() => DownloadDir, DeviceName);
         Phone.UploadStarted += up =>
-            Dispatcher.UIThread.Post(() => Transfers.Insert(0, TransferViewModel.Web(this, up)));
+            Dispatcher.UIThread.Post(() =>
+            {
+                var t = TransferViewModel.Web(this, up);
+                Transfers.Insert(0, t); // main window
+                Phone.Transfers.Insert(0, t); // phone window (same live object)
+            });
 
         _ = RefreshFirewallAsync();
 
@@ -293,7 +298,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await StartSendAsync(t.Plan);
     }
 
-    internal void Dismiss(TransferViewModel t) => Transfers.Remove(t);
+    internal void Dismiss(TransferViewModel t)
+    {
+        Transfers.Remove(t);
+        Phone.Transfers.Remove(t);
+    }
 
     static List<(string Full, string Rel)> Expand(IEnumerable<string> paths)
     {
