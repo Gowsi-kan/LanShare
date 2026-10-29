@@ -42,6 +42,9 @@ public static class Protocol
     public const byte AckBad = 0;
     public const byte Done = 0xD0;
 
+    public const byte ControlPause = 0x50; // control-connection message: "pause sending"
+    public const byte ControlResume = 0x52; // control-connection message: "resume sending"
+
     public static readonly byte[] Magic = "LFS2"u8.ToArray();
 }
 

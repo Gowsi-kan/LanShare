@@ -125,6 +125,16 @@
                     Content="Decline"
                     IsVisible="{Binding IsAwaiting}" />
                 <Button
+                    Classes="ghost small"
+                    Command="{Binding PauseCommand}"
+                    Content="Pause"
+                    IsVisible="{Binding CanPause}" />
+                <Button
+                    Classes="primary small"
+                    Command="{Binding ResumeCommand}"
+                    Content="Resume"
+                    IsVisible="{Binding CanResume}" />
+                <Button
                     Classes="danger small"
                     Command="{Binding CancelCommand}"
                     Content="Cancel"

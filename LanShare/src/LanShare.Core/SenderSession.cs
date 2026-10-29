@@ -26,7 +26,7 @@ public sealed record SendOptions(
 /// A chunk only counts once the receiver has verified and persisted it; on any stream failure every unacked
 /// chunk of that stream is put back on the shared queue and the stream reconnects.
 /// </summary>
-public sealed class SenderSession
+public sealed class SenderSession : IPausable
 {
     const int MaxConsecutiveFailures = 8;
     const int MaxAutoStreams = 8;
@@ -84,6 +84,10 @@ public sealed class SenderSession
     readonly FileEntry[] _entries;
     readonly SendOptions _options;
     readonly Guid _id = Guid.NewGuid();
+
+    readonly PauseGate _gate = new();
+    readonly SemaphoreSlim _controlWrite = new(1, 1);
+    volatile NetworkStream? _control;
 
     public TransferState State { get; }
 
@@ -145,12 +149,51 @@ public sealed class SenderSession
         }
     }
 
+    // ---- pause / resume: soft pause, connections stay open, no re-accept needed
+    public void Pause() => SetLocalPause(true);
+
+    public void Resume() => SetLocalPause(false);
+
+    void SetLocalPause(bool paused)
+    {
+        State.PausedLocal = paused;
+        ApplyPauseState();
+        _ = SendControlAsync(paused ? Protocol.ControlPause : Protocol.ControlResume);
+    }
+
+    void ApplyPauseState()
+    {
+        State.ApplyPause();
+        _gate.Set(State.IsPaused);
+    }
+
+    async Task SendControlAsync(byte b)
+    {
+        var cs = _control;
+        if (cs is null)
+            return;
+        try
+        {
+            await _controlWrite.WaitAsync();
+            try
+            {
+                await cs.WriteAsync(new[] { b });
+            }
+            finally
+            {
+                _controlWrite.Release();
+            }
+        }
+        catch { }
+    }
+
     async Task RunCoreAsync(CancellationToken ct)
     {
         int chunk = Protocol.ChunkSize;
         State.Phase = Phase.Connecting;
         var (sock, cs) = await ConnectAsync(_remote, ct);
         using var csGuard = cs;
+        _control = cs;
         State.LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint);
 
         int initialStreams =
@@ -238,6 +281,9 @@ public sealed class SenderSession
             queue.Writer.TryComplete();
 
         State.Phase = Phase.Transferring;
+        ApplyPauseState();
+        if (State.PausedLocal)
+            _ = SendControlAsync(Protocol.ControlPause);
         using var lcts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Exception? fatal = null;
         bool receivedDone = false;
@@ -288,12 +334,29 @@ public sealed class SenderSession
             try
             {
                 var one = new byte[1];
-                int n = await cs.ReadAsync(one, lcts.Token);
-                if (n == 0)
-                    throw new IOException("Receiver closed the connection before finishing.");
-                if (one[0] != Protocol.Done)
-                    throw new InvalidDataException("Unexpected control byte.");
-                receivedDone = true;
+                while (true)
+                {
+                    int n = await cs.ReadAsync(one, lcts.Token);
+                    if (n == 0)
+                        throw new IOException("Receiver closed the connection before finishing.");
+                    if (one[0] == Protocol.Done)
+                    {
+                        receivedDone = true;
+                        break;
+                    }
+                    if (one[0] == Protocol.ControlPause)
+                    {
+                        State.PausedByPeer = true;
+                        ApplyPauseState();
+                    }
+                    else if (one[0] == Protocol.ControlResume)
+                    {
+                        State.PausedByPeer = false;
+                        ApplyPauseState();
+                    }
+                    else
+                        throw new InvalidDataException("Unexpected control byte.");
+                }
             }
             catch (OperationCanceledException) when (lcts.IsCancellationRequested) { }
             catch (Exception ex)
@@ -332,6 +395,7 @@ public sealed class SenderSession
                 {
                     await foreach (var item in queue.Reader.ReadAllAsync(pt))
                     {
+                        await _gate.WaitAsync(pt);
                         var p = new Prepared { Item = item };
                         owned[p.Key] = p;
                         await LoadAsync(p, bundles, ctx.Gate, pt);
@@ -354,6 +418,7 @@ public sealed class SenderSession
                 {
                     await foreach (var p in prepared.Reader.ReadAllAsync(pt))
                     {
+                        await _gate.WaitAsync(pt);
                         if (_options.Limiter is { } lim)
                             await lim.WaitAsync(p.WireLen, pt);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr, p.Item.File);

@@ -5,11 +5,14 @@ using System.Net.Sockets;
 
 namespace LanShare.Core;
 
-public sealed class IncomingJob(Offer offer, string peer, TransferState state)
+public sealed class IncomingJob(Offer offer, string peer, TransferState state) : IPausable
 {
     public Offer Offer { get; } = offer;
     public string Peer { get; } = peer;
     public TransferState State { get; } = state;
+
+    internal Func<byte, Task>? ControlSender { get; set; }
+    internal SemaphoreSlim ControlWriteGate { get; } = new(1, 1);
 
     internal TaskCompletionSource<string?> Decision { get; } =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -18,6 +21,20 @@ public sealed class IncomingJob(Offer offer, string peer, TransferState state)
     public void Accept(string saveDir) => Decision.TrySetResult(saveDir);
 
     public void Decline() => Decision.TrySetResult(null);
+
+    public void Pause()
+    {
+        State.PausedLocal = true;
+        State.ApplyPause();
+        _ = ControlSender?.Invoke(Protocol.ControlPause);
+    }
+
+    public void Resume()
+    {
+        State.PausedLocal = false;
+        State.ApplyPause();
+        _ = ControlSender?.Invoke(Protocol.ControlResume);
+    }
 
     public void Cancel()
     {
@@ -154,10 +171,11 @@ public sealed class TransferService : IAsyncDisposable
         };
         var job = new IncomingJob(offer, $"{offer.SenderName} ({remote})", state);
 
+        job.ControlSender = b => SendControlAsync(ns, job, b);
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(serviceCt, job.Cts.Token);
         var token = cts.Token;
-        var probe = new byte[1];
-        var peerGone = ns.ReadAsync(probe, token).AsTask(); // sender never sends after the offer: completion == disconnect
+        var peerGone = ControlLoopAsync(ns, state, token); // completes only when the sender disconnects
         ReceiverSession? session = null;
 
         try
@@ -210,6 +228,7 @@ public sealed class TransferService : IAsyncDisposable
                 token
             );
             state.Phase = Phase.Transferring;
+            state.ApplyPause();
             long lastBytes = state.DoneBytes;
             long lastChange = Stopwatch.GetTimestamp();
             long lastStreams = lastChange;
@@ -237,6 +256,11 @@ public sealed class TransferService : IAsyncDisposable
                 }
                 if (state.ActiveStreams > 0)
                     lastStreams = nowTs;
+                if (state.IsPaused)
+                {
+                    lastChange = nowTs;
+                    lastStreams = nowTs;
+                } // a pause must not trip the idle watchdogs
                 if (Stopwatch.GetElapsedTime(lastStreams, nowTs).TotalSeconds > 90)
                     throw new IOException("Sender opened no data streams for 90 s.");
                 if (
@@ -248,7 +272,15 @@ public sealed class TransferService : IAsyncDisposable
 
             await session.AllDone;
             session.FinishCleanup();
-            await ns.WriteAsync(new byte[] { Protocol.Done }, token);
+            await job.ControlWriteGate.WaitAsync(token);
+            try
+            {
+                await ns.WriteAsync(new byte[] { Protocol.Done }, token);
+            }
+            finally
+            {
+                job.ControlWriteGate.Release();
+            }
             state.Phase = Phase.Completed;
         }
         catch (OperationCanceledException)
@@ -266,6 +298,43 @@ public sealed class TransferService : IAsyncDisposable
             session?.Dispose();
             cts.Cancel();
         }
+    }
+
+    static async Task ControlLoopAsync(NetworkStream ns, TransferState state, CancellationToken ct)
+    {
+        var one = new byte[1];
+        while (true)
+        {
+            if (await ns.ReadAsync(one, ct) == 0)
+                return; // sender closed the control connection
+            if (one[0] == Protocol.ControlPause)
+            {
+                state.PausedByPeer = true;
+                state.ApplyPause();
+            }
+            else if (one[0] == Protocol.ControlResume)
+            {
+                state.PausedByPeer = false;
+                state.ApplyPause();
+            }
+        }
+    }
+
+    static async Task SendControlAsync(NetworkStream ns, IncomingJob job, byte b)
+    {
+        try
+        {
+            await job.ControlWriteGate.WaitAsync();
+            try
+            {
+                await ns.WriteAsync(new[] { b });
+            }
+            finally
+            {
+                job.ControlWriteGate.Release();
+            }
+        }
+        catch { }
     }
 
     public async ValueTask DisposeAsync()

@@ -19,6 +19,8 @@ public sealed partial class TransferViewModel : ObservableObject
     readonly TransferState _state;
     readonly IncomingJob? _job;
     readonly CancellationTokenSource? _cts;
+    readonly IPausable? _pausable;
+    bool _wasLive;
 
     readonly bool _web;
     readonly Action? _onCancel;
@@ -38,6 +40,12 @@ public sealed partial class TransferViewModel : ObservableObject
     public string DirectionGlyph => IsIncoming ? "↓" : "↑";
     public string Title { get; private init; } = "";
     public string Subtitle { get; private init; } = "";
+
+    public event Action<TransferViewModel>? Finished;
+    public Phase FinalPhase => _state.Phase;
+    public string? ErrorText => _state.Error;
+    public bool IsDownloadToPhone => _webDownload;
+    public double SpeedBytesPerSec => _state.Phase == Phase.Transferring ? _speed : 0;
 
     [ObservableProperty]
     double _percent;
@@ -81,6 +89,12 @@ public sealed partial class TransferViewModel : ObservableObject
     [ObservableProperty]
     bool _canOpenFolder;
 
+    [ObservableProperty]
+    bool _canPause;
+
+    [ObservableProperty]
+    bool _canResume;
+
     TransferViewModel(
         MainViewModel owner,
         TransferState state,
@@ -88,7 +102,8 @@ public sealed partial class TransferViewModel : ObservableObject
         CancellationTokenSource? cts,
         bool web = false,
         Action? onCancel = null,
-        bool webDownload = false
+        bool webDownload = false,
+        IPausable? pausable = null
     )
     {
         _owner = owner;
@@ -98,12 +113,13 @@ public sealed partial class TransferViewModel : ObservableObject
         _web = web;
         _onCancel = onCancel;
         _webDownload = webDownload;
+        _pausable = pausable;
     }
 
     public static TransferViewModel Incoming(MainViewModel owner, IncomingJob job)
     {
         var o = job.Offer;
-        var vm = new TransferViewModel(owner, job.State, job, null)
+        var vm = new TransferViewModel(owner, job.State, job, null, pausable: job)
         {
             Title =
                 $"{o.Files.Count} file{(o.Files.Count == 1 ? "" : "s")} · {Format.Bytes(o.TotalBytes)}",
@@ -121,7 +137,7 @@ public sealed partial class TransferViewModel : ObservableObject
     {
         var cts = new CancellationTokenSource();
         var n = plan.Files.Count;
-        var vm = new TransferViewModel(owner, session.State, null, cts)
+        var vm = new TransferViewModel(owner, session.State, null, cts, pausable: session)
         {
             Plan = plan,
             Title = $"{n} file{(n == 1 ? "" : "s")} · {Format.Bytes(session.State.TotalBytes)}",
@@ -146,8 +162,8 @@ public sealed partial class TransferViewModel : ObservableObject
         {
             Title = up.FileName,
             Subtitle = up.IsDownload
-                   ? $"{Format.Bytes(up.State.TotalBytes)} · to phone / browser ({up.Peer})"
-                   : $"{Format.Bytes(up.State.TotalBytes)} · from phone / browser ({up.Peer})",
+                ? $"{Format.Bytes(up.State.TotalBytes)} · to phone / browser ({up.Peer})"
+                : $"{Format.Bytes(up.State.TotalBytes)} · from phone / browser ({up.Peer})",
         };
         vm.Refresh();
         return vm;
@@ -162,6 +178,15 @@ public sealed partial class TransferViewModel : ObservableObject
         long done = s.DoneBytes,
             total = s.TotalBytes;
         long now = Stopwatch.GetTimestamp();
+
+        bool nowLive = phase == Phase.Transferring;
+        if (nowLive && !_wasLive && _startTs != 0) // resumed after a pause: restart the speed measurement
+        {
+            _lastTs = now;
+            _lastBytes = done;
+            _speed = 0;
+        }
+        _wasLive = nowLive;
 
         if (phase == Phase.Transferring)
         {
@@ -232,7 +257,12 @@ public sealed partial class TransferViewModel : ObservableObject
             Phase.Failed => ($"Failed: {s.Error}", Red),
             Phase.Cancelled => ("Cancelled", Grey),
             Phase.Declined => ("Declined", Grey),
-            Phase.Paused => ("Paused, waiting for the phone", Amber),
+            Phase.Paused => (
+                _pausable is null ? "Paused, waiting for the phone"
+                : s.PausedByPeer && !s.PausedLocal ? "Paused by the other device"
+                : "Paused",
+                Amber
+            ),
             _ => ("", Grey),
         };
 
@@ -243,8 +273,13 @@ public sealed partial class TransferViewModel : ObservableObject
         CanRetry =
             !_web && !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
         CanOpenFolder = IsFinished && !_webDownload;
-        if (IsFinished)
+        CanPause = _pausable is not null && phase == Phase.Transferring;
+        CanResume = _pausable is not null && phase == Phase.Paused;
+        if (IsFinished && !_final)
+        {
             _final = true;
+            Finished?.Invoke(this);
+        }
     }
 
     public void CancelQuietly()
@@ -259,6 +294,12 @@ public sealed partial class TransferViewModel : ObservableObject
 
     [RelayCommand]
     void Decline() => _job?.Decline();
+
+    [RelayCommand]
+    void Pause() => _pausable?.Pause();
+
+    [RelayCommand]
+    void Resume() => _pausable?.Resume();
 
     [RelayCommand]
     void Cancel() => CancelQuietly();

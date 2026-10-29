@@ -1,0 +1,55 @@
+<Window
+    x:Class="LanShare.Views.ToastWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Width="340"
+    Height="88"
+    Background="#161A22"
+    CanResize="False"
+    ShowActivated="False"
+    ShowInTaskbar="False"
+    SystemDecorations="None"
+    Topmost="True"
+    WindowStartupLocation="Manual">
+
+    <Border
+        Background="#161A22"
+        BorderBrush="#2A3A66"
+        BorderThickness="1"
+        Cursor="Hand"
+        PointerPressed="OnPressed">
+        <Grid ColumnDefinitions="4,*,Auto">
+            <Border x:Name="Accent" Background="#34C77B" />
+            <StackPanel
+                Grid.Column="1"
+                Margin="12,8"
+                VerticalAlignment="Center"
+                Spacing="2">
+                <TextBlock
+                    x:Name="TitleText"
+                    FontWeight="SemiBold"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    x:Name="BodyText"
+                    MaxHeight="40"
+                    Classes="muted"
+                    TextTrimming="CharacterEllipsis"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <Button
+                Grid.Column="2"
+                Width="30"
+                Height="30"
+                VerticalAlignment="Top"
+                Classes="winbtn"
+                Click="OnCloseClick">
+                <Path
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Data="M0,0 L8,8 M8,0 L0,8"
+                    Stroke="#C9D1E3"
+                    StrokeThickness="1.2" />
+            </Button>
+        </Grid>
+    </Border>
+</Window>

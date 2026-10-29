@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Net;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LanShare.Core;
+using LanShare.Services;
 
 namespace LanShare.ViewModels;
 
@@ -17,8 +19,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     readonly RateLimiter _limiter = new();
     int _tick;
 
+    readonly AppSettings _settings;
+    readonly List<string> _pending = [];
+    bool _initializing = true;
+    bool _trayHintShown;
+
     public ObservableCollection<Peer> Peers { get; } = [];
     public ObservableCollection<TransferViewModel> Transfers { get; } = [];
+
+    public Notifier Notifier { get; } = new();
+    public Func<bool> IsWindowActive { get; set; } = () => false;
+    public Action? ShowMainWindow { get; set; }
 
     public string DeviceName { get; }
     public PhoneAccessViewModel Phone { get; }
@@ -66,6 +77,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     bool _firewallBusy;
 
+    [ObservableProperty]
+    bool _runInBackground;
+
+    [ObservableProperty]
+    bool _notificationsEnabled;
+
+    [ObservableProperty]
+    bool _startWithSystem;
+
+    [ObservableProperty]
+    bool _contextMenuEnabled;
+
+    [ObservableProperty]
+    bool _hasPending;
+
+    [ObservableProperty]
+    string _pendingText = "";
+
     public string StreamsText =>
         StreamsSetting < 0.5 ? "Auto" : $"{(int)Math.Round(StreamsSetting)}";
     public string TargetText =>
@@ -73,9 +102,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ? $"Sending to {p.Name} ({p.Address})"
             : "Select a device on the left, then drop files";
 
-    public MainViewModel()
+    public MainViewModel(AppSettings settings)
     {
         DeviceName = Environment.MachineName;
+        _settings = settings;
+        RunInBackground = settings.RunInBackground;
+        NotificationsEnabled = settings.Notifications;
+        StartWithSystem = AutoStart.IsEnabled(); // reflect what the OS really has
+        ContextMenuEnabled = ContextMenuIntegration.IsInstalled();
+        _initializing = false;
         _downloadDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Downloads",
@@ -96,7 +131,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Dispatcher.UIThread.Post(() =>
             {
                 var t = TransferViewModel.Web(this, up);
-                Transfers.Insert(0, t); // main window
+                AddTransfer(t);
                 Phone.Transfers.Insert(0, t); // phone window (same live object)
             });
 
@@ -217,9 +252,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     void OnIncoming(IncomingJob job) =>
         Dispatcher.UIThread.Post(() =>
         {
-            Transfers.Insert(0, TransferViewModel.Incoming(this, job));
+            AddTransfer(TransferViewModel.Incoming(this, job));
             if (AutoAccept)
                 job.Accept(DownloadDir);
+            if (!IsWindowActive())
+                Notifier.Show(
+                    AutoAccept ? "Receiving files" : "Incoming files",
+                    $"{job.Peer}: {job.Offer.Files.Count} file(s) · {Format.Bytes(job.Offer.TotalBytes)}"
+                        + (AutoAccept ? "" : " — click to review"),
+                    ShowMainWindow
+                );
         });
 
     [RelayCommand]
@@ -281,7 +323,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     opts
                 )
             );
-            Transfers.Insert(0, TransferViewModel.Outgoing(this, session, plan));
+            AddTransfer(TransferViewModel.Outgoing(this, session, plan));
             StatusMessage = "";
         }
         catch (Exception e)
@@ -336,6 +378,168 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
         }
         return list;
+    }
+
+    partial void OnRunInBackgroundChanged(bool value)
+    {
+        if (_initializing)
+            return;
+        _settings.RunInBackground = value;
+        _settings.Save();
+    }
+
+    partial void OnNotificationsEnabledChanged(bool value)
+    {
+        Notifier.Enabled = value;
+        if (_initializing)
+            return;
+        _settings.Notifications = value;
+        _settings.Save();
+    }
+
+    partial void OnStartWithSystemChanged(bool value)
+    {
+        if (_initializing)
+            return;
+        if (AutoStart.Set(value) is { } err)
+        {
+            StatusMessage = err;
+            _initializing = true;
+            StartWithSystem = !value; // revert the checkbox
+            _initializing = false;
+        }
+    }
+
+    partial void OnContextMenuEnabledChanged(bool value)
+    {
+        if (_initializing)
+            return;
+        if (ContextMenuIntegration.Set(value) is { } err)
+        {
+            StatusMessage = err;
+            _initializing = true;
+            ContextMenuEnabled = !value;
+            _initializing = false;
+        }
+    }
+
+    partial void OnSelectedPeerChanged(Peer? value) => UpdatePending();
+
+    // ---- "Send with LanShare" / open-with: paths wait here until a device is chosen
+    public void QueuePaths(IEnumerable<string> paths)
+    {
+        foreach (var p in paths)
+            if ((File.Exists(p) || Directory.Exists(p)) && !_pending.Contains(p))
+                _pending.Add(p);
+        UpdatePending();
+        ShowMainWindow?.Invoke();
+    }
+
+    void UpdatePending()
+    {
+        HasPending = _pending.Count > 0;
+        var what = _pending.Count switch
+        {
+            0 => "",
+            1 => $"Ready to send: {Path.GetFileName(_pending[0])}",
+            _ => $"Ready to send: {_pending.Count} items",
+        };
+        PendingText =
+            what + (SelectedPeer is { } p ? $" → {p.Name}" : " — pick a device on the left");
+    }
+
+    [RelayCommand]
+    async Task SendPendingAsync()
+    {
+        if (_pending.Count == 0)
+            return;
+        if (SelectedPeer is null)
+        {
+            StatusMessage = "Pick a device on the left first.";
+            return;
+        }
+        var paths = _pending.ToList();
+        _pending.Clear();
+        UpdatePending();
+        await SendPathsAsync(paths);
+    }
+
+    [RelayCommand]
+    void CancelPending()
+    {
+        _pending.Clear();
+        UpdatePending();
+    }
+
+    // ---- notifications / tray
+    void AddTransfer(TransferViewModel t)
+    {
+        t.Finished += OnTransferFinished;
+        Transfers.Insert(0, t);
+    }
+
+    void OnTransferFinished(TransferViewModel t)
+    {
+        if (IsWindowActive())
+            return; // the user is looking at the window
+        switch (t.FinalPhase)
+        {
+            case Phase.Completed when t.IsIncoming:
+                Notifier.Show(
+                    "File received",
+                    $"{t.Title} saved to {DownloadDir}",
+                    OpenDownloadFolder
+                );
+                break;
+            case Phase.Completed:
+                Notifier.Show("Transfer finished", $"{t.Title} sent.", ShowMainWindow);
+                break;
+            case Phase.Failed:
+                Notifier.Show(
+                    "Transfer failed",
+                    $"{t.Title}: {t.ErrorText ?? "unknown error"}",
+                    ShowMainWindow,
+                    error: true
+                );
+                break;
+        }
+    }
+
+    public void OpenDownloadFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(DownloadDir);
+            Process.Start(new ProcessStartInfo(DownloadDir) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    public void OnHiddenToTray()
+    {
+        if (_trayHintShown)
+            return;
+        _trayHintShown = true;
+        Notifier.Show(
+            "LanShare is still running",
+            "Receiving continues in the tray. Right-click the tray icon to quit.",
+            ShowMainWindow
+        );
+    }
+
+    public string TrayTooltip()
+    {
+        int active = 0;
+        double speed = 0;
+        foreach (var t in Transfers)
+            if (t.IsActive)
+            {
+                active++;
+                speed += t.SpeedBytesPerSec;
+            }
+        return active == 0
+            ? "LanShare — idle"
+            : $"LanShare — {active} active · {Format.Rate(speed)}";
     }
 
     public void Dispose()
