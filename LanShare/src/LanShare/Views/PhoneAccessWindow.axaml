@@ -1,0 +1,198 @@
+<Window
+    x:Class="LanShare.Views.PhoneAccessWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:LanShare.Views"
+    xmlns:vm="using:LanShare.ViewModels"
+    Title="Phone / browser access"
+    Width="920"
+    Height="640"
+    x:DataType="vm:PhoneAccessViewModel"
+    Background="#0E1014"
+    CanResize="False"
+    SystemDecorations="None"
+    WindowStartupLocation="CenterOwner">
+
+    <Border BorderBrush="#232834" BorderThickness="1">
+        <Grid RowDefinitions="38,*">
+
+            <Border
+                Background="#12151C"
+                BorderBrush="#232834"
+                BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="*,Auto">
+                    <Border Background="Transparent" PointerPressed="OnTitlePointerPressed">
+                        <TextBlock
+                            Margin="14,0"
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            Text="Phone / browser access" />
+                    </Border>
+                    <Button
+                        Grid.Column="1"
+                        Classes="winbtn close"
+                        Click="OnClose"
+                        ToolTip.Tip="Close">
+                        <Path
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Data="M0,0 L10,10 M10,0 L0,10"
+                            Stroke="#C9D1E3"
+                            StrokeThickness="1.2" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Grid
+                Grid.Row="1"
+                Margin="12"
+                ColumnDefinitions="340,*"
+                ColumnSpacing="12">
+
+                <!--  Left: start/stop, QR  -->
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+                    <TextBlock
+                        Classes="muted"
+                        Text="Open the address on a phone browser on the same Wi-Fi. Nothing to install on the phone."
+                        TextWrapping="Wrap" />
+
+                    <StackPanel Grid.Row="1" Spacing="6">
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Classes="primary"
+                            Command="{Binding ToggleCommand}"
+                            Content="{Binding ToggleText}"
+                            IsEnabled="{Binding !Busy}" />
+                        <TextBlock
+                            Classes="muted"
+                            Text="{Binding Status}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Border
+                        Grid.Row="2"
+                        Padding="12"
+                        Classes="card"
+                        IsVisible="{Binding IsRunning}">
+                        <StackPanel Spacing="8">
+                            <Border
+                                Padding="8"
+                                HorizontalAlignment="Center"
+                                Background="White"
+                                CornerRadius="8">
+                                <Image
+                                    Width="170"
+                                    Height="170"
+                                    Source="{Binding Qr}" />
+                            </Border>
+                            <TextBox
+                                FontSize="12"
+                                IsReadOnly="True"
+                                Text="{Binding Url}"
+                                TextWrapping="Wrap" />
+                            <ComboBox
+                                HorizontalAlignment="Stretch"
+                                IsVisible="{Binding HasMultipleAddresses}"
+                                ItemsSource="{Binding Addresses}"
+                                SelectedItem="{Binding SelectedAddress}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button
+                                    Classes="ghost small"
+                                    Click="OnCopy"
+                                    Content="Copy link" />
+                                <Button
+                                    Classes="ghost small"
+                                    Command="{Binding OpenFirewallCommand}"
+                                    Content="Allow through firewall" />
+                            </StackPanel>
+                            <TextBlock
+                                MaxHeight="48"
+                                Classes="muted"
+                                Text="{Binding FirewallText}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap"
+                                ToolTip.Tip="{Binding FirewallText}" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock
+                        Grid.Row="4"
+                        Classes="muted"
+                        Text="Anyone on your network with this link can send files to this PC and download the files shared here. The link changes every time you start. Stop phone access when you are done."
+                        TextWrapping="Wrap" />
+                </Grid>
+
+                <!--  Right: shared files + live transfers  -->
+                <Grid
+                    Grid.Column="1"
+                    RowDefinitions="2*,3*"
+                    RowSpacing="10">
+
+                    <Border Padding="12" Classes="card">
+                        <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Classes="lbl"
+                                    Text="SHARED WITH PHONES" />
+                                <Button
+                                    Grid.Column="1"
+                                    Classes="ghost small"
+                                    Click="OnAddFiles"
+                                    Content="Add files…" />
+                            </Grid>
+                            <ListBox
+                                Grid.Row="1"
+                                MinHeight="60"
+                                Background="Transparent"
+                                ItemsSource="{Binding Shared}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SharedFileItem">
+                                        <Grid
+                                            Margin="2,3"
+                                            ColumnDefinitions="*,Auto,Auto"
+                                            ColumnSpacing="8">
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Name}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                Classes="muted"
+                                                Text="{Binding SizeText}" />
+                                            <Button
+                                                Grid.Column="2"
+                                                Classes="danger small"
+                                                Command="{Binding RemoveCommand}"
+                                                Content="Remove" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
+                    <Border
+                        Grid.Row="1"
+                        Padding="12"
+                        Classes="card">
+                        <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                            <TextBlock Classes="lbl" Text="TRANSFERS WITH PHONES" />
+                            <ScrollViewer Grid.Row="1" Padding="0,0,12,0">
+                                <ItemsControl ItemsSource="{Binding Transfers}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:TransferViewModel">
+                                            <views:TransferCardView />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

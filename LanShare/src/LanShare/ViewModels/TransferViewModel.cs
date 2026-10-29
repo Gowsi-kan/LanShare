@@ -3,6 +3,7 @@ using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LanShare.Core;
+using LanShare.Web;
 
 namespace LanShare.ViewModels;
 
@@ -18,6 +19,12 @@ public sealed partial class TransferViewModel : ObservableObject
     readonly TransferState _state;
     readonly IncomingJob? _job;
     readonly CancellationTokenSource? _cts;
+    readonly IPausable? _pausable;
+    bool _wasLive;
+
+    readonly bool _web;
+    readonly Action? _onCancel;
+    readonly bool _webDownload;
 
     long _startTs,
         _lastTs,
@@ -29,10 +36,16 @@ public sealed partial class TransferViewModel : ObservableObject
         _final;
 
     public SendPlan? Plan { get; private init; }
-    public bool IsIncoming => _job is not null;
+    public bool IsIncoming => _job is not null || (_web && !_webDownload);
     public string DirectionGlyph => IsIncoming ? "↓" : "↑";
     public string Title { get; private init; } = "";
     public string Subtitle { get; private init; } = "";
+
+    public event Action<TransferViewModel>? Finished;
+    public Phase FinalPhase => _state.Phase;
+    public string? ErrorText => _state.Error;
+    public bool IsDownloadToPhone => _webDownload;
+    public double SpeedBytesPerSec => _state.Phase == Phase.Transferring ? _speed : 0;
 
     [ObservableProperty]
     double _percent;
@@ -73,23 +86,40 @@ public sealed partial class TransferViewModel : ObservableObject
     [ObservableProperty]
     bool _isFinished;
 
+    [ObservableProperty]
+    bool _canOpenFolder;
+
+    [ObservableProperty]
+    bool _canPause;
+
+    [ObservableProperty]
+    bool _canResume;
+
     TransferViewModel(
         MainViewModel owner,
         TransferState state,
         IncomingJob? job,
-        CancellationTokenSource? cts
+        CancellationTokenSource? cts,
+        bool web = false,
+        Action? onCancel = null,
+        bool webDownload = false,
+        IPausable? pausable = null
     )
     {
         _owner = owner;
         _state = state;
         _job = job;
         _cts = cts;
+        _web = web;
+        _onCancel = onCancel;
+        _webDownload = webDownload;
+        _pausable = pausable;
     }
 
     public static TransferViewModel Incoming(MainViewModel owner, IncomingJob job)
     {
         var o = job.Offer;
-        var vm = new TransferViewModel(owner, job.State, job, null)
+        var vm = new TransferViewModel(owner, job.State, job, null, pausable: job)
         {
             Title =
                 $"{o.Files.Count} file{(o.Files.Count == 1 ? "" : "s")} · {Format.Bytes(o.TotalBytes)}",
@@ -107,7 +137,7 @@ public sealed partial class TransferViewModel : ObservableObject
     {
         var cts = new CancellationTokenSource();
         var n = plan.Files.Count;
-        var vm = new TransferViewModel(owner, session.State, null, cts)
+        var vm = new TransferViewModel(owner, session.State, null, cts, pausable: session)
         {
             Plan = plan,
             Title = $"{n} file{(n == 1 ? "" : "s")} · {Format.Bytes(session.State.TotalBytes)}",
@@ -115,6 +145,27 @@ public sealed partial class TransferViewModel : ObservableObject
         };
         vm.Refresh();
         _ = Task.Run(() => session.RunAsync(cts.Token));
+        return vm;
+    }
+
+    public static TransferViewModel Web(MainViewModel owner, WebUpload up)
+    {
+        var vm = new TransferViewModel(
+            owner,
+            up.State,
+            null,
+            null,
+            web: true,
+            onCancel: up.Cancel,
+            webDownload: up.IsDownload
+        )
+        {
+            Title = up.FileName,
+            Subtitle = up.IsDownload
+                ? $"{Format.Bytes(up.State.TotalBytes)} · to phone / browser ({up.Peer})"
+                : $"{Format.Bytes(up.State.TotalBytes)} · from phone / browser ({up.Peer})",
+        };
+        vm.Refresh();
         return vm;
     }
 
@@ -127,6 +178,15 @@ public sealed partial class TransferViewModel : ObservableObject
         long done = s.DoneBytes,
             total = s.TotalBytes;
         long now = Stopwatch.GetTimestamp();
+
+        bool nowLive = phase == Phase.Transferring;
+        if (nowLive && !_wasLive && _startTs != 0) // resumed after a pause: restart the speed measurement
+        {
+            _lastTs = now;
+            _lastBytes = done;
+            _speed = 0;
+        }
+        _wasLive = nowLive;
 
         if (phase == Phase.Transferring)
         {
@@ -197,21 +257,36 @@ public sealed partial class TransferViewModel : ObservableObject
             Phase.Failed => ($"Failed: {s.Error}", Red),
             Phase.Cancelled => ("Cancelled", Grey),
             Phase.Declined => ("Declined", Grey),
+            Phase.Paused => (
+                _pausable is null ? "Paused, waiting for the phone"
+                : s.PausedByPeer && !s.PausedLocal ? "Paused by the other device"
+                : "Paused",
+                Amber
+            ),
             _ => ("", Grey),
         };
 
         IsAwaiting = phase == Phase.AwaitingYou;
-        IsActive = phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring;
+        IsActive =
+            phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring or Phase.Paused;
         IsFinished = phase is Phase.Completed or Phase.Failed or Phase.Cancelled or Phase.Declined;
-        CanRetry = !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
-        if (IsFinished)
+        CanRetry =
+            !_web && !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;
+        CanOpenFolder = IsFinished && !_webDownload;
+        CanPause = _pausable is not null && phase == Phase.Transferring;
+        CanResume = _pausable is not null && phase == Phase.Paused;
+        if (IsFinished && !_final)
+        {
             _final = true;
+            Finished?.Invoke(this);
+        }
     }
 
     public void CancelQuietly()
     {
         _cts?.Cancel();
         _job?.Cancel();
+        _onCancel?.Invoke();
     }
 
     [RelayCommand]
@@ -219,6 +294,12 @@ public sealed partial class TransferViewModel : ObservableObject
 
     [RelayCommand]
     void Decline() => _job?.Decline();
+
+    [RelayCommand]
+    void Pause() => _pausable?.Pause();
+
+    [RelayCommand]
+    void Resume() => _pausable?.Resume();
 
     [RelayCommand]
     void Cancel() => CancelQuietly();

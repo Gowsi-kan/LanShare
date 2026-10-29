@@ -1,78 +1,95 @@
-<Application xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="LanShare.App"
-             RequestedThemeVariant="Dark">
-  <Application.Styles>
-    <FluentTheme />
+<Application
+    x:Class="LanShare.App"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedThemeVariant="Dark">
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon
+                Clicked="OnTrayClicked"
+                Icon="/Assets/app.png"
+                ToolTipText="LanShare">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Click="OnTrayOpen" Header="Open LanShare" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Click="OnTrayQuit" Header="Quit LanShare" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+    <Application.Styles>
+        <FluentTheme />
 
-    <Style Selector="Border.card">
-      <Setter Property="Background" Value="#161A22" />
-      <Setter Property="BorderBrush" Value="#232834" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="Padding" Value="16" />
-    </Style>
-    <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="#8A93A6" />
-      <Setter Property="FontSize" Value="12" />
-    </Style>
-    <Style Selector="TextBlock.lbl">
-      <Setter Property="Foreground" Value="#6B7488" />
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="TextBlock.val">
-      <Setter Property="FontSize" Value="14" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#161A22" />
+            <Setter Property="BorderBrush" Value="#232834" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="#8A93A6" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="Foreground" Value="#6B7488" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.val">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
 
-    <Style Selector="Button.winbtn">
-      <Setter Property="Width" Value="46" />
-      <Setter Property="Height" Value="38" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="CornerRadius" Value="0" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.winbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#232834" />
-    </Style>
-    <Style Selector="Button.winbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#2C3342" />
-    </Style>
-    <Style Selector="Button.winbtn.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#E5484D" />
-    </Style>
-    <Style Selector="Button.winbtn.close:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#C13A3F" />
-    </Style>
-    <Style Selector="Button.small">
-      <Setter Property="Padding" Value="10,5" />
-      <Setter Property="FontSize" Value="12" />
-    </Style>
+        <Style Selector="Button.winbtn">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.winbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#232834" />
+        </Style>
+        <Style Selector="Button.winbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2C3342" />
+        </Style>
+        <Style Selector="Button.winbtn.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#E5484D" />
+        </Style>
+        <Style Selector="Button.winbtn.close:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#C13A3F" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
 
-    <Style Selector="Button.primary">
-      <Setter Property="Background" Value="#4C8DFF" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="14,8" />
-    </Style>
-    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#6AA0FF" />
-      <Setter Property="Foreground" Value="White" />
-    </Style>
-    <Style Selector="Button.ghost">
-      <Setter Property="Background" Value="#1F2430" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="14,8" />
-    </Style>
-    <Style Selector="Button.danger">
-      <Setter Property="Background" Value="#3A1D24" />
-      <Setter Property="Foreground" Value="#FF8A97" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="14,8" />
-    </Style>
-  </Application.Styles>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#4C8DFF" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,8" />
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#6AA0FF" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="#1F2430" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,8" />
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="#3A1D24" />
+            <Setter Property="Foreground" Value="#FF8A97" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,8" />
+        </Style>
+    </Application.Styles>
 </Application>

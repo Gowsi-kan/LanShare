@@ -22,6 +22,8 @@ public sealed class TransferState(long totalBytes, int totalFiles)
     public int FilesDone => Volatile.Read(ref _filesDone);
     public int ActiveStreams => Volatile.Read(ref _streams);
     public int Retries => Volatile.Read(ref _retries);
+    int _pauseLocal,
+        _pausePeer;
 
     public long LinkBps
     {
@@ -45,6 +47,34 @@ public sealed class TransferState(long totalBytes, int totalFiles)
     }
 
     public void AddBytes(long n) => Interlocked.Add(ref _done, n);
+
+    public bool PausedLocal
+    {
+        get => Volatile.Read(ref _pauseLocal) != 0;
+        set => Volatile.Write(ref _pauseLocal, value ? 1 : 0);
+    }
+    public bool PausedByPeer
+    {
+        get => Volatile.Read(ref _pausePeer) != 0;
+        set => Volatile.Write(ref _pausePeer, value ? 1 : 0);
+    }
+    public bool IsPaused => PausedLocal || PausedByPeer;
+
+    /// <summary>Syncs Phase with the pause flags, but only while a transfer is running (never overwrites Completed/Failed).</summary>
+    public void ApplyPause()
+    {
+        while (true)
+        {
+            int cur = Volatile.Read(ref _phase);
+            if ((Phase)cur is not (Phase.Transferring or Phase.Paused))
+                return;
+            int want = (int)(IsPaused ? Phase.Paused : Phase.Transferring);
+            if (want == cur || Interlocked.CompareExchange(ref _phase, want, cur) == cur)
+                return;
+        }
+    }
+
+    public void SetDone(long n) => Interlocked.Exchange(ref _done, n);
 
     public void AddSent(long raw, long wire)
     {

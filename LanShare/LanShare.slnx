@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/LanShare.Core/LanShare.Core.csproj" />
+  <Project Path="src/LanShare.Web/LanShare.Web.csproj" />
   <Project Path="src/LanShare/LanShare.csproj" />
   <Project Path="bench/LanShare.Bench/LanShare.Bench.csproj" />
 </Solution>

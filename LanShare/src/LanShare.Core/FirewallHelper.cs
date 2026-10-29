@@ -126,6 +126,49 @@ public static class FirewallHelper
         return new(FirewallState.NotNeeded, "No firewall setup needed on this OS.");
     }
 
+    /// <summary>Opens the browser-access (HTTP) port. Same elevation approach as OpenAsync.</summary>
+    public static async Task<FirewallStatus> OpenWebPortAsync(int port)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var args = "/c \"" +
+                    "netsh advfirewall firewall delete rule name=LanShare-WEB >nul 2>&1 & " +
+                    $"netsh advfirewall firewall add rule name=LanShare-WEB dir=in action=allow protocol=TCP localport={port} profile=private,domain\"";
+                using var p = Process.Start(new ProcessStartInfo("cmd.exe", args)
+                {
+                    Verb = "runas",
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                });
+                if (p is null) return new(FirewallState.Closed, "Could not start the elevated process.");
+                using var wait = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                await p.WaitForExitAsync(wait.Token);
+                return p.ExitCode == 0
+                    ? new(FirewallState.Open, $"Windows Firewall: TCP {port} allowed (Private/Domain networks).")
+                    : new(FirewallState.Closed, "Adding the firewall rule failed.");
+            }
+
+            if (OperatingSystem.IsLinux())
+            {
+                string script;
+                if (await IsActiveAsync("firewalld")) script = $"firewall-cmd --permanent --add-port={port}/tcp && firewall-cmd --reload";
+                else if (await IsActiveAsync("ufw")) script = $"ufw allow {port}/tcp";
+                else return new(FirewallState.NotNeeded, "No active ufw/firewalld detected; nothing to open.");
+
+                var r = await RunAsync("pkexec", $"sh -c \"{script}\"", 120);
+                return r.ExitCode == 0
+                    ? new(FirewallState.Open, $"TCP {port} opened.")
+                    : new(FirewallState.Closed, $"Could not elevate. Run manually:\nsudo sh -c \"{script}\"");
+            }
+        }
+        catch (Win32Exception) { return new(FirewallState.Closed, "Administrator permission was denied."); }
+        catch (OperationCanceledException) { return new(FirewallState.Closed, "Timed out waiting for the administrator prompt."); }
+        catch (Exception e) { return new(FirewallState.Closed, $"Firewall change failed: {e.Message}"); }
+        return new(FirewallState.NotNeeded, "No firewall setup needed on this OS.");
+    }
+
     static async Task<FirewallStatus> CheckWindowsAsync(int tcpPort)
     {
         var tcp = await RunAsync("netsh", $"advfirewall firewall show rule name={TcpRule}");

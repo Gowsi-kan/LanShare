@@ -1,0 +1,161 @@
+<UserControl
+    x:Class="LanShare.Views.TransferCardView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:LanShare.ViewModels"
+    x:DataType="vm:TransferViewModel">
+
+    <Border
+        Margin="0,0,0,8"
+        Padding="14"
+        Classes="card">
+        <StackPanel Spacing="8">
+
+            <!--  Header: glyph | file name (takes the leftover width and trims) | state badge  -->
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="16"
+                    Foreground="#4C8DFF"
+                    Text="{Binding DirectionGlyph}" />
+                <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    Text="{Binding Title}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTip.Tip="{Binding Title}" />
+                <Border
+                    Grid.Column="2"
+                    MaxWidth="240"
+                    Padding="10,3"
+                    VerticalAlignment="Center"
+                    Background="#1F2430"
+                    CornerRadius="999">
+                    <TextBlock
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Foreground="{Binding PhaseBrush}"
+                        Text="{Binding PhaseText}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding PhaseText}" />
+                </Border>
+            </Grid>
+
+            <TextBlock
+                Classes="muted"
+                Text="{Binding Subtitle}"
+                TextTrimming="CharacterEllipsis"
+                ToolTip.Tip="{Binding Subtitle}" />
+
+            <ProgressBar
+                Height="8"
+                Foreground="{Binding PhaseBrush}"
+                Maximum="100"
+                Minimum="0"
+                Value="{Binding Percent}" />
+
+            <!--  Stats: proportional columns, every value trims instead of overflowing  -->
+            <Grid ColumnDefinitions="1.6*,1.1*,1*,1.3*" ColumnSpacing="10">
+                <StackPanel Spacing="1">
+                    <TextBlock Classes="lbl" Text="TRANSFERRED" />
+                    <TextBlock
+                        Classes="val"
+                        FontSize="13"
+                        Text="{Binding Transferred}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding Transferred}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Classes="lbl" Text="SPEED" />
+                    <TextBlock
+                        Classes="val"
+                        FontSize="13"
+                        Text="{Binding SpeedText}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding SpeedText}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="1">
+                    <TextBlock Classes="lbl" Text="ETA" />
+                    <TextBlock
+                        Classes="val"
+                        FontSize="13"
+                        Text="{Binding EtaText}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding EtaText}" />
+                </StackPanel>
+                <StackPanel Grid.Column="3" Spacing="1">
+                    <TextBlock Classes="lbl" Text="LINK" />
+                    <TextBlock
+                        Classes="val"
+                        FontSize="13"
+                        Text="{Binding LinkText}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip.Tip="{Binding LinkText}" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Spacing="2">
+                <TextBlock
+                    Classes="muted"
+                    Text="{Binding FilesText}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTip.Tip="{Binding FilesText}" />
+                <TextBlock
+                    Classes="muted"
+                    Text="{Binding CurrentFile}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTip.Tip="{Binding CurrentFile}" />
+            </StackPanel>
+
+            <!--  Actions on their own row, so they can never collide with the text above  -->
+            <StackPanel
+                HorizontalAlignment="Right"
+                Orientation="Horizontal"
+                Spacing="8">
+                <Button
+                    Classes="primary small"
+                    Command="{Binding AcceptCommand}"
+                    Content="Accept"
+                    IsVisible="{Binding IsAwaiting}" />
+                <Button
+                    Classes="ghost small"
+                    Command="{Binding DeclineCommand}"
+                    Content="Decline"
+                    IsVisible="{Binding IsAwaiting}" />
+                <Button
+                    Classes="ghost small"
+                    Command="{Binding PauseCommand}"
+                    Content="Pause"
+                    IsVisible="{Binding CanPause}" />
+                <Button
+                    Classes="primary small"
+                    Command="{Binding ResumeCommand}"
+                    Content="Resume"
+                    IsVisible="{Binding CanResume}" />
+                <Button
+                    Classes="danger small"
+                    Command="{Binding CancelCommand}"
+                    Content="Cancel"
+                    IsVisible="{Binding IsActive}" />
+                <Button
+                    Classes="primary small"
+                    Command="{Binding RetryCommand}"
+                    Content="Retry / Resume"
+                    IsVisible="{Binding CanRetry}" />
+                <Button
+                    Classes="ghost small"
+                    Command="{Binding OpenFolderCommand}"
+                    Content="Open folder"
+                    IsVisible="{Binding CanOpenFolder}" />
+                <Button
+                    Classes="ghost small"
+                    Command="{Binding DismissCommand}"
+                    Content="Dismiss"
+                    IsVisible="{Binding IsFinished}" />
+            </StackPanel>
+
+        </StackPanel>
+    </Border>
+</UserControl>

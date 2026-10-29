@@ -3,6 +3,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:core="using:LanShare.Core"
+    xmlns:views="using:LanShare.Views"
     xmlns:vm="using:LanShare.ViewModels"
     Title="LanShare"
     Width="1120"
@@ -14,419 +15,360 @@
     Icon="/Assets/app.ico"
     SystemDecorations="None"
     WindowStartupLocation="CenterScreen">
-    <Border BorderBrush="#232834" BorderThickness="1">
-        <Grid RowDefinitions="38,*">
-            <!--  ===== Custom title bar =====  -->
-            <Border
-                Background="#12151C"
-                BorderBrush="#232834"
-                BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,Auto">
-                    <Border Background="Transparent" PointerPressed="OnTitlePointerPressed">
-                        <StackPanel
-                            Margin="12,0"
-                            VerticalAlignment="Center"
-                            Orientation="Horizontal"
-                            Spacing="10">
-                            <Border
-                                Width="22"
-                                Height="22"
-                                Background="#4C8DFF"
-                                CornerRadius="6">
+    <Panel>
+        <Border
+            x:Name="ContentRoot"
+            BorderBrush="#232834"
+            BorderThickness="1">
+            <Grid RowDefinitions="38,*">
+                <!--  ===== Custom title bar =====  -->
+                <Border
+                    Background="#12151C"
+                    BorderBrush="#232834"
+                    BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Border Background="Transparent" PointerPressed="OnTitlePointerPressed">
+                            <StackPanel
+                                Margin="12,0"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="10">
+                                <Border
+                                    Width="22"
+                                    Height="22"
+                                    Background="#4C8DFF"
+                                    CornerRadius="6">
+                                    <Path
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Data="M0,3 L10,3 M7,0 L10,3 L7,6 M10,9 L0,9 M3,6 L0,9 L3,12"
+                                        Stroke="White"
+                                        StrokeJoin="Round"
+                                        StrokeLineCap="Round"
+                                        StrokeThickness="1.4" />
+                                </Border>
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontWeight="SemiBold"
+                                    Text="LanShare" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Classes="muted"
+                                    Text="LAN file transfer" />
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button
+                                Classes="winbtn"
+                                Click="OnSettings"
+                                ToolTip.Tip="Settings">
                                 <Path
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
-                                    Data="M0,3 L10,3 M7,0 L10,3 L7,6 M10,9 L0,9 M3,6 L0,9 L3,12"
-                                    Stroke="White"
-                                    StrokeJoin="Round"
-                                    StrokeLineCap="Round"
-                                    StrokeThickness="1.4" />
-                            </Border>
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                FontWeight="SemiBold"
-                                Text="LanShare" />
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                Classes="muted"
-                                Text="LAN file transfer" />
-                        </StackPanel>
-                    </Border>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button
-                            Classes="winbtn"
-                            Click="OnMinimize"
-                            ToolTip.Tip="Minimize">
-                            <Path
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Data="M0,0 L10,0"
-                                Stroke="#C9D1E3"
-                                StrokeThickness="1.2" />
-                        </Button>
-                        <Button
-                            Classes="winbtn close"
-                            Click="OnClose"
-                            ToolTip.Tip="Close">
-                            <Path
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Data="M0,0 L10,10 M10,0 L0,10"
-                                Stroke="#C9D1E3"
-                                StrokeThickness="1.2" />
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!--  ===== Body =====  -->
-            <Grid
-                Grid.Row="1"
-                Margin="12"
-                ColumnDefinitions="320,*"
-                ColumnSpacing="12">
-                <!--  Left rail: fixed cards + elastic device list (scrolls inside itself)  -->
-                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
-                    <Border Padding="14,12" Classes="card">
-                        <StackPanel Spacing="3">
-                            <TextBlock Classes="lbl" Text="THIS DEVICE" />
-                            <TextBlock
-                                FontSize="17"
-                                FontWeight="Bold"
-                                Text="{Binding DeviceName}"
-                                TextTrimming="CharacterEllipsis" />
-                            <TextBlock Classes="muted" Text="{Binding ListenText}" />
-                            <Border
-                                Height="1"
-                                Margin="0,6"
-                                Background="#232834" />
-                            <TextBlock Classes="lbl" Text="NETWORK ACCESS" />
-                            <TextBlock
-                                MaxHeight="48"
-                                Classes="muted"
-                                Text="{Binding FirewallText}"
-                                TextTrimming="CharacterEllipsis"
-                                TextWrapping="Wrap"
-                                ToolTip.Tip="{Binding FirewallText}" />
+                                    Data="M0,0 L11,0 M0,4.5 L11,4.5 M0,9 L11,9"
+                                    Stroke="#C9D1E3"
+                                    StrokeThickness="1.2" />
+                            </Button>
                             <Button
-                                Margin="0,4,0,0"
-                                Classes="primary small"
-                                Command="{Binding OpenFirewallCommand}"
-                                Content="Allow through firewall"
-                                IsEnabled="{Binding !FirewallBusy}"
-                                IsVisible="{Binding FirewallNeedsAction}" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border
-                        Grid.Row="1"
-                        Padding="14,12"
-                        Classes="card">
-                        <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
-                            <TextBlock Classes="lbl" Text="NEARBY DEVICES" />
-                            <ListBox
-                                Grid.Row="1"
-                                MinHeight="60"
-                                Background="Transparent"
-                                ItemsSource="{Binding Peers}"
-                                SelectedItem="{Binding SelectedPeer}">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="core:Peer">
-                                        <Grid
-                                            Margin="2,3"
-                                            ColumnDefinitions="*,Auto"
-                                            ColumnSpacing="8">
-                                            <TextBlock
-                                                FontWeight="SemiBold"
-                                                Text="{Binding Name}"
-                                                TextTrimming="CharacterEllipsis" />
-                                            <TextBlock
-                                                Grid.Column="1"
-                                                VerticalAlignment="Center"
-                                                Classes="muted"
-                                                Text="{Binding Address}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                            <TextBlock
-                                Grid.Row="2"
-                                Classes="muted"
-                                IsVisible="{Binding PeersHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                Text="{Binding PeersHint}" />
-                            <Grid
-                                Grid.Row="3"
-                                ColumnDefinitions="*,Auto"
-                                ColumnSpacing="8">
-                                <TextBox Text="{Binding ManualHost}" Watermark="Add by IPv4 address" />
-                                <Button
-                                    Grid.Column="1"
-                                    Classes="ghost"
-                                    Command="{Binding AddPeerCommand}"
-                                    Content="Add" />
-                            </Grid>
-                        </Grid>
-                    </Border>
-
-                    <Border
-                        Grid.Row="2"
-                        Padding="14,12"
-                        Classes="card">
-                        <StackPanel Spacing="8">
-                            <TextBlock Classes="lbl" Text="RECEIVING" />
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock
+                                Classes="winbtn"
+                                Click="OnMinimize"
+                                ToolTip.Tip="Minimize">
+                                <Path
+                                    HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
-                                    FontSize="12"
-                                    Text="{Binding DownloadDir}"
-                                    TextTrimming="CharacterEllipsis"
-                                    ToolTip.Tip="{Binding DownloadDir}" />
-                                <Button
-                                    Grid.Column="1"
-                                    Classes="ghost small"
-                                    Click="OnPickDownloadDir"
-                                    Content="Change…" />
-                            </Grid>
-                            <StackPanel Spacing="3">
-                                <ProgressBar
-                                    Height="6"
-                                    Foreground="#F5B942"
-                                    Maximum="100"
-                                    Minimum="0"
-                                    Value="{Binding DiskUsedPercent}" />
-                                <TextBlock Classes="muted" Text="{Binding DiskText}" />
-                            </StackPanel>
-                            <CheckBox Content="Auto-accept incoming transfers" IsChecked="{Binding AutoAccept}" />
+                                    Data="M0,0 L10,0"
+                                    Stroke="#C9D1E3"
+                                    StrokeThickness="1.2" />
+                            </Button>
+                            <Button
+                                Classes="winbtn close"
+                                Click="OnClose"
+                                ToolTip.Tip="Close">
+                                <Path
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Data="M0,0 L10,10 M10,0 L0,10"
+                                    Stroke="#C9D1E3"
+                                    StrokeThickness="1.2" />
+                            </Button>
                         </StackPanel>
-                    </Border>
-                </Grid>
+                    </Grid>
+                </Border>
 
-                <!--  Right: drop zone, send options, transfers  -->
+                <!--  ===== Body =====  -->
                 <Grid
-                    Grid.Column="1"
-                    RowDefinitions="Auto,Auto,Auto,*"
-                    RowSpacing="10">
-                    <Border
-                        Padding="18,14"
-                        Background="#12182A"
-                        BorderBrush="#2A3A66"
-                        Classes="card">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                            <StackPanel VerticalAlignment="Center" Spacing="3">
+                    Grid.Row="1"
+                    Margin="12"
+                    ColumnDefinitions="320,*"
+                    ColumnSpacing="12">
+                    <!--  Left rail: fixed cards + elastic device list (scrolls inside itself)  -->
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                        <Border Padding="14,12" Classes="card">
+                            <StackPanel Spacing="3">
+                                <TextBlock Classes="lbl" Text="THIS DEVICE" />
                                 <TextBlock
-                                    FontSize="18"
+                                    FontSize="17"
                                     FontWeight="Bold"
-                                    Text="Drop files or folders anywhere" />
-                                <TextBlock
-                                    Classes="muted"
-                                    FontSize="13"
-                                    Text="{Binding TargetText}"
+                                    Text="{Binding DeviceName}"
                                     TextTrimming="CharacterEllipsis" />
+                                <TextBlock Classes="muted" Text="{Binding ListenText}" />
+                                <Border
+                                    Height="1"
+                                    Margin="0,6"
+                                    Background="#232834" />
+                                <TextBlock Classes="lbl" Text="NETWORK ACCESS" />
                                 <TextBlock
-                                    MinHeight="16"
-                                    FontSize="12"
-                                    Foreground="#FF8A97"
-                                    Text="{Binding StatusMessage}"
+                                    MaxHeight="48"
+                                    Classes="muted"
+                                    Text="{Binding FirewallText}"
                                     TextTrimming="CharacterEllipsis"
-                                    ToolTip.Tip="{Binding StatusMessage}" />
-                            </StackPanel>
-                            <StackPanel
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Orientation="Horizontal"
-                                Spacing="8">
+                                    TextWrapping="Wrap"
+                                    ToolTip.Tip="{Binding FirewallText}" />
                                 <Button
-                                    Classes="primary"
-                                    Click="OnAddFiles"
-                                    Content="Add files…" />
-                                <Button
-                                    Classes="ghost"
-                                    Click="OnAddFolder"
-                                    Content="Add folder…" />
+                                    Margin="0,4,0,0"
+                                    Classes="primary small"
+                                    Command="{Binding OpenFirewallCommand}"
+                                    Content="Allow through firewall"
+                                    IsEnabled="{Binding !FirewallBusy}"
+                                    IsVisible="{Binding FirewallNeedsAction}" />
                             </StackPanel>
-                        </Grid>
-                    </Border>
+                        </Border>
 
-                    <Border
-                        Grid.Row="1"
-                        Padding="14,10"
-                        Classes="card"
-                        ToolTip.Tip="Send options apply to new transfers">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="24">
-                            <StackPanel Spacing="2">
-                                <Grid ColumnDefinitions="*,Auto">
+                        <Border
+                            Grid.Row="1"
+                            Padding="14,12"
+                            Classes="card">
+                            <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
+                                <TextBlock Classes="lbl" Text="NEARBY DEVICES" />
+                                <ListBox
+                                    Grid.Row="1"
+                                    MinHeight="60"
+                                    Background="Transparent"
+                                    ItemsSource="{Binding Peers}"
+                                    SelectedItem="{Binding SelectedPeer}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="core:Peer">
+                                            <Grid
+                                                Margin="2,3"
+                                                ColumnDefinitions="*,Auto"
+                                                ColumnSpacing="8">
+                                                <TextBlock
+                                                    FontWeight="SemiBold"
+                                                    Text="{Binding Name}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    VerticalAlignment="Center"
+                                                    Classes="muted"
+                                                    Text="{Binding Address}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBlock
+                                    Grid.Row="2"
+                                    Classes="muted"
+                                    IsVisible="{Binding PeersHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Text="{Binding PeersHint}" />
+                                <Grid
+                                    Grid.Row="3"
+                                    ColumnDefinitions="*,Auto"
+                                    ColumnSpacing="8">
+                                    <TextBox Text="{Binding ManualHost}" Watermark="Add by IPv4 address" />
+                                    <Button
+                                        Grid.Column="1"
+                                        Classes="ghost"
+                                        Command="{Binding AddPeerCommand}"
+                                        Content="Add" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Border
+                            Grid.Row="2"
+                            Padding="14,12"
+                            Classes="card">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="lbl" Text="RECEIVING" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        Text="{Binding DownloadDir}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip.Tip="{Binding DownloadDir}" />
+                                    <Button
+                                        Grid.Column="1"
+                                        Classes="ghost small"
+                                        Click="OnPickDownloadDir"
+                                        Content="Change…" />
+                                </Grid>
+                                <StackPanel Spacing="3">
+                                    <ProgressBar
+                                        Height="6"
+                                        Foreground="#F5B942"
+                                        Maximum="100"
+                                        Minimum="0"
+                                        Value="{Binding DiskUsedPercent}" />
+                                    <TextBlock Classes="muted" Text="{Binding DiskText}" />
+                                </StackPanel>
+                                <CheckBox Content="Auto-accept incoming transfers" IsChecked="{Binding AutoAccept}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!--  Right: drop zone, send options, transfers  -->
+                    <Grid
+                        Grid.Column="1"
+                        RowDefinitions="Auto,Auto,Auto,*"
+                        RowSpacing="10">
+                        <Border
+                            Padding="18,14"
+                            Background="#12182A"
+                            BorderBrush="#2A3A66"
+                            Classes="card">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                <StackPanel VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock
+                                        FontSize="18"
+                                        FontWeight="Bold"
+                                        Text="Drop files or folders anywhere" />
+                                    <TextBlock
+                                        Classes="muted"
+                                        FontSize="13"
+                                        Text="{Binding TargetText}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        MinHeight="16"
+                                        FontSize="12"
+                                        Foreground="#FF8A97"
+                                        Text="{Binding StatusMessage}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip.Tip="{Binding StatusMessage}" />
+                                    <Border
+                                        Margin="0,4,0,0"
+                                        Padding="10,6"
+                                        Background="#1A2A4A"
+                                        CornerRadius="8"
+                                        IsVisible="{Binding HasPending}">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                Text="{Binding PendingText}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <Button
+                                                Grid.Column="1"
+                                                Classes="primary small"
+                                                Command="{Binding SendPendingCommand}"
+                                                Content="Send" />
+                                            <Button
+                                                Grid.Column="2"
+                                                Classes="ghost small"
+                                                Command="{Binding CancelPendingCommand}"
+                                                Content="Clear" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
+                                    <Button
+                                        Classes="primary"
+                                        Click="OnAddFiles"
+                                        Content="Add files…" />
+                                    <Button
+                                        Classes="ghost"
+                                        Click="OnAddFolder"
+                                        Content="Add folder…" />
+                                    <Button
+                                        Classes="ghost"
+                                        Click="OnPhoneAccess"
+                                        Content="Phone…" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border
+                            Grid.Row="1"
+                            Padding="14,10"
+                            Classes="card"
+                            ToolTip.Tip="Send options apply to new transfers">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="24">
+                                <StackPanel Spacing="2">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            Classes="muted"
+                                            Text="Parallel streams (0 = Auto, up to 8)" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            MinWidth="36"
+                                            Classes="val"
+                                            FontSize="12"
+                                            Text="{Binding StreamsText}"
+                                            TextAlignment="Right" />
+                                    </Grid>
+                                    <Slider
+                                        IsSnapToTickEnabled="True"
+                                        Maximum="16"
+                                        Minimum="0"
+                                        TickFrequency="1"
+                                        Value="{Binding StreamsSetting}" />
+                                </StackPanel>
+                                <CheckBox
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Content="Compress (LZ4)"
+                                    IsChecked="{Binding CompressionEnabled}" />
+                                <StackPanel
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
                                     <TextBlock
                                         VerticalAlignment="Center"
                                         Classes="muted"
-                                        Text="Parallel streams (0 = Auto, up to 8)" />
-                                    <TextBlock
-                                        Grid.Column="1"
-                                        MinWidth="36"
-                                        Classes="val"
-                                        FontSize="12"
-                                        Text="{Binding StreamsText}"
-                                        TextAlignment="Right" />
-                                </Grid>
-                                <Slider
-                                    IsSnapToTickEnabled="True"
-                                    Maximum="16"
-                                    Minimum="0"
-                                    TickFrequency="1"
-                                    Value="{Binding StreamsSetting}" />
-                            </StackPanel>
-                            <CheckBox
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Content="Compress (LZ4)"
-                                IsChecked="{Binding CompressionEnabled}" />
-                            <StackPanel
-                                Grid.Column="2"
-                                VerticalAlignment="Center"
-                                Orientation="Horizontal"
-                                Spacing="8">
-                                <TextBlock
-                                    VerticalAlignment="Center"
-                                    Classes="muted"
-                                    Text="Limit" />
-                                <ComboBox
-                                    Width="130"
-                                    ItemsSource="{Binding BandwidthOptions}"
-                                    SelectedIndex="{Binding BandwidthIndex}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
+                                        Text="Limit" />
+                                    <ComboBox
+                                        Width="130"
+                                        ItemsSource="{Binding BandwidthOptions}"
+                                        SelectedIndex="{Binding BandwidthIndex}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
 
-                    <TextBlock
-                        Grid.Row="2"
-                        Classes="lbl"
-                        Text="TRANSFERS" />
+                        <TextBlock
+                            Grid.Row="2"
+                            Classes="lbl"
+                            Text="TRANSFERS" />
 
-                    <ScrollViewer Grid.Row="3">
-                        <ItemsControl ItemsSource="{Binding Transfers}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:TransferViewModel">
-                                    <Border
-                                        Margin="0,0,0,8"
-                                        Padding="14"
-                                        Classes="card">
-                                        <StackPanel Spacing="10">
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                                <StackPanel Spacing="2">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock
-                                                            FontSize="16"
-                                                            Foreground="#4C8DFF"
-                                                            Text="{Binding DirectionGlyph}" />
-                                                        <TextBlock
-                                                            FontSize="15"
-                                                            FontWeight="SemiBold"
-                                                            Text="{Binding Title}" />
-                                                    </StackPanel>
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding Subtitle}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                                <Border
-                                                    Grid.Column="1"
-                                                    MaxWidth="300"
-                                                    Padding="10,4"
-                                                    VerticalAlignment="Top"
-                                                    Background="#1F2430"
-                                                    CornerRadius="999">
-                                                    <TextBlock
-                                                        FontSize="12"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="{Binding PhaseBrush}"
-                                                        Text="{Binding PhaseText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </Border>
-                                            </Grid>
-
-                                            <ProgressBar
-                                                Height="8"
-                                                Foreground="{Binding PhaseBrush}"
-                                                Maximum="100"
-                                                Minimum="0"
-                                                Value="{Binding Percent}" />
-
-                                            <UniformGrid Columns="4">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="TRANSFERRED" />
-                                                    <TextBlock Classes="val" Text="{Binding Transferred}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="SPEED" />
-                                                    <TextBlock Classes="val" Text="{Binding SpeedText}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="ETA" />
-                                                    <TextBlock Classes="val" Text="{Binding EtaText}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Classes="lbl" Text="LINK" />
-                                                    <TextBlock
-                                                        Classes="val"
-                                                        Text="{Binding LinkText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                            </UniformGrid>
-
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                                <StackPanel VerticalAlignment="Center" Spacing="2">
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding FilesText}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock
-                                                        Classes="muted"
-                                                        Text="{Binding CurrentFile}"
-                                                        TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                                <StackPanel
-                                                    Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    Spacing="8">
-                                                    <Button
-                                                        Classes="primary small"
-                                                        Command="{Binding AcceptCommand}"
-                                                        Content="Accept"
-                                                        IsVisible="{Binding IsAwaiting}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding DeclineCommand}"
-                                                        Content="Decline"
-                                                        IsVisible="{Binding IsAwaiting}" />
-                                                    <Button
-                                                        Classes="danger small"
-                                                        Command="{Binding CancelCommand}"
-                                                        Content="Cancel"
-                                                        IsVisible="{Binding IsActive}" />
-                                                    <Button
-                                                        Classes="primary small"
-                                                        Command="{Binding RetryCommand}"
-                                                        Content="Retry / Resume"
-                                                        IsVisible="{Binding CanRetry}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding OpenFolderCommand}"
-                                                        Content="Open folder"
-                                                        IsVisible="{Binding IsFinished}" />
-                                                    <Button
-                                                        Classes="ghost small"
-                                                        Command="{Binding DismissCommand}"
-                                                        Content="Dismiss"
-                                                        IsVisible="{Binding IsFinished}" />
-                                                </StackPanel>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                        <ScrollViewer Grid.Row="3" Padding="0,0,12,0">
+                            <ItemsControl ItemsSource="{Binding Transfers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TransferViewModel">
+                                        <views:TransferCardView />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
                 </Grid>
             </Grid>
-        </Grid>
-    </Border>
+        </Border>
+
+        <!--  dims (and blurs, see code-behind) the whole main window while Phone / Settings are open  -->
+        <Border
+            x:Name="DimOverlay"
+            Background="#99000000"
+            IsHitTestVisible="False"
+            Opacity="0">
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                </Transitions>
+            </Border.Transitions>
+        </Border>
+    </Panel>
 </Window>
