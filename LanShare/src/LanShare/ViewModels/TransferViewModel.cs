@@ -263,12 +263,18 @@ public sealed partial class TransferViewModel : ObservableObject
                 : "Paused",
                 Amber
             ),
+            Phase.Pairing => ("Pairing — confirm the code", Amber),
             _ => ("", Grey),
         };
 
         IsAwaiting = phase == Phase.AwaitingYou;
         IsActive =
-            phase is Phase.Connecting or Phase.WaitingForPeer or Phase.Transferring or Phase.Paused;
+            phase
+                is Phase.Connecting
+                    or Phase.WaitingForPeer
+                    or Phase.Transferring
+                    or Phase.Paused
+                    or Phase.Pairing;
         IsFinished = phase is Phase.Completed or Phase.Failed or Phase.Cancelled or Phase.Declined;
         CanRetry =
             !_web && !IsIncoming && phase is Phase.Failed or Phase.Cancelled or Phase.Declined;

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -30,6 +30,9 @@
 	  </Compile>
 	  <Compile Update="Views\SettingsWindow.axaml.cs">
 	    <DependentUpon>SettingsWindow.axaml</DependentUpon>
+	  </Compile>
+	  <Compile Update="Views\PromptWindow.axaml.cs">
+	    <DependentUpon>PromptWindow.axaml</DependentUpon>
 	  </Compile>
 	  <Compile Update="Views\TransferCardView.axaml.cs">
 	    <DependentUpon>TransferCardView.axaml</DependentUpon>

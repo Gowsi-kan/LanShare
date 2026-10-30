@@ -58,6 +58,7 @@ public sealed class ReceiverSession : IDisposable
 
     public TransferState State { get; }
     public Task AllDone => _allDone.Task;
+    public string PeerFingerprint { get; set; } = "";
 
     ReceiverSession(Offer offer, TransferState state, FileState[] files, string journalPath)
     {
@@ -187,7 +188,7 @@ public sealed class ReceiverSession : IDisposable
     }
 
     /// <summary>Serves one data connection until the sender closes it or an I/O error occurs.</summary>
-    public async Task ReceiveLoopAsync(NetworkStream ns, CancellationToken outer)
+    public async Task ReceiveLoopAsync(Stream ns, CancellationToken outer)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(outer);
         var ct = cts.Token;
@@ -244,7 +245,7 @@ public sealed class ReceiverSession : IDisposable
         }
     }
 
-    async Task ReadFramesAsync(NetworkStream ns, ChannelWriter<Frame> writer, CancellationToken ct)
+    async Task ReadFramesAsync(Stream ns, ChannelWriter<Frame> writer, CancellationToken ct)
     {
         var hdr = new byte[Protocol.DataHeaderSize];
         try
@@ -293,7 +294,7 @@ public sealed class ReceiverSession : IDisposable
         }
     }
 
-    async Task WriteFramesAsync(NetworkStream ns, ChannelReader<Frame> reader, CancellationToken ct)
+    async Task WriteFramesAsync(Stream ns, ChannelReader<Frame> reader, CancellationToken ct)
     {
         byte[]? scratch = null; // decompression buffer
         var ack = new byte[1];

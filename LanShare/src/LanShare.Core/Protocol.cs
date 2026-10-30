@@ -14,6 +14,7 @@ public enum Phase
     Cancelled,
     Declined,
     Paused,
+    Pairing
 }
 
 public enum Decision : byte

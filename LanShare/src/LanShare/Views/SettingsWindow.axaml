@@ -4,8 +4,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:LanShare.ViewModels"
     Title="Settings"
-    Width="460"
-    Height="540"
+    Width="900"
+    Height="560"
     x:DataType="vm:MainViewModel"
     Background="#0E1014"
     CanResize="False"
@@ -42,48 +42,107 @@
                 </Grid>
             </Border>
 
-            <StackPanel
+            <Grid
                 Grid.Row="1"
-                Margin="16"
-                Spacing="12">
+                Margin="14"
+                ColumnDefinitions="420,*"
+                ColumnSpacing="12">
 
-                <Border Padding="14,12" Classes="card">
-                    <StackPanel Spacing="8">
-                        <TextBlock Classes="lbl" Text="BACKGROUND" />
-                        <CheckBox Content="Run in background (system tray)" IsChecked="{Binding RunInBackground}" />
-                        <TextBlock
-                            Classes="muted"
-                            Text="Minimize and Close hide the window and LanShare keeps receiving. Use the tray icon to open or quit."
+                <StackPanel Spacing="12">
+                    <Border Padding="14,12" Classes="card">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="lbl" Text="BACKGROUND" />
+                            <CheckBox Content="Run in background (system tray)" IsChecked="{Binding RunInBackground}" />
+                            <TextBlock
+                                Classes="muted"
+                                Text="Minimize and Close hide the window and LanShare keeps receiving. Use the tray icon to open or quit."
+                                TextWrapping="Wrap" />
+                            <CheckBox Content="Desktop notifications" IsChecked="{Binding NotificationsEnabled}" />
+                            <TextBlock
+                                Classes="muted"
+                                Text="Pop-up when a file arrives, a transfer finishes or fails, while the window is hidden or unfocused."
+                                TextWrapping="Wrap" />
+                            <CheckBox Content="Start with Windows / Linux login" IsChecked="{Binding StartWithSystem}" />
+                            <TextBlock
+                                Classes="muted"
+                                Text="Starts hidden in the tray. Works for the published app, not for 'dotnet run'."
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Padding="14,12" Classes="card">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="lbl" Text="FILE MANAGER" />
+                            <CheckBox Content="Right-click menu: Send with LanShare" IsChecked="{Binding ContextMenuEnabled}" />
+                            <TextBlock
+                                Classes="muted"
+                                Text="Windows: right-click files or folders (Windows 11: Show more options). Linux: Files, Nemo and Dolphin, plus Open With."
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Border
+                    Grid.Column="1"
+                    Padding="14,12"
+                    Classes="card">
+                    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="8">
+                        <TextBlock Classes="lbl" Text="THIS DEVICE'S FINGERPRINT" />
+                        <TextBox
+                            Grid.Row="1"
+                            FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
+                            FontSize="12"
+                            IsReadOnly="True"
+                            Text="{Binding OwnFingerprint}"
                             TextWrapping="Wrap" />
-                        <CheckBox Content="Desktop notifications" IsChecked="{Binding NotificationsEnabled}" />
                         <TextBlock
-                            Classes="muted"
-                            Text="Pop-up when a file arrives, a transfer finishes or fails, while the window is hidden or unfocused."
-                            TextWrapping="Wrap" />
-                        <CheckBox Content="Start with Windows / Linux login" IsChecked="{Binding StartWithSystem}" />
+                            Grid.Row="2"
+                            Margin="0,6,0,0"
+                            Classes="lbl"
+                            Text="TRUSTED DEVICES" />
+                        <ListBox
+                            Grid.Row="3"
+                            MinHeight="60"
+                            Background="Transparent"
+                            ItemsSource="{Binding TrustedDevices}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TrustedDeviceItem">
+                                    <Grid
+                                        Margin="2,4"
+                                        ColumnDefinitions="*,Auto"
+                                        ColumnSpacing="8">
+                                        <StackPanel Spacing="1">
+                                            <TextBlock
+                                                FontWeight="SemiBold"
+                                                Text="{Binding Name}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Classes="muted"
+                                                Text="{Binding Detail}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Classes="muted"
+                                                FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
+                                                Text="{Binding Fingerprint}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Classes="danger small"
+                                            Command="{Binding ForgetCommand}"
+                                            Content="Forget" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                         <TextBlock
+                            Grid.Row="4"
                             Classes="muted"
-                            Text="Starts hidden in the tray. Works for the published app, not for 'dotnet run'."
+                            Text="Only paired devices can send files. Forget a device and it must pair again (same code on both screens) before it can send."
                             TextWrapping="Wrap" />
-                    </StackPanel>
+                    </Grid>
                 </Border>
-
-                <Border Padding="14,12" Classes="card">
-                    <StackPanel Spacing="8">
-                        <TextBlock Classes="lbl" Text="FILE MANAGER" />
-                        <CheckBox Content="Right-click menu: Send with LanShare" IsChecked="{Binding ContextMenuEnabled}" />
-                        <TextBlock
-                            Classes="muted"
-                            Text="Windows: right-click files or folders (Windows 11: Show more options). Linux: Files, Nemo and Dolphin, plus Open With. Select a device in LanShare afterwards and click Send."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
-
-                <TextBlock
-                    Classes="muted"
-                    Text="No tray icon on your Linux desktop (for example GNOME without the AppIndicator extension)? Start LanShare again from the app menu and it brings the window back, or turn off Run in background."
-                    TextWrapping="Wrap" />
-            </StackPanel>
+            </Grid>
         </Grid>
     </Border>
 </Window>

@@ -69,18 +69,20 @@ var text = new List<(string Full, string Rel)>
 };
 var small = MakeSmall(smallCount);
 
+await using var svc = new TransferService("bench", SecurityContext.CreateEphemeral());
+var senderSecurity = SecurityContext.CreateEphemeral();
+
 var scenarios = new List<(string Name, List<(string Full, string Rel)> Files, SendOptions Opts)>
 {
-    ("large-random | 1 stream", large, new(1, false)),
-    ("large-random | 4 streams", large, new(4, false)),
-    ("large-random | auto-tune", large, new(0, false)),
-    ("text | compress off", text, new(4, false)),
-    ("text | compress on", text, new(4, true)),
-    ($"small x{smallCount} | compress off", small, new(4, false)),
-    ($"small x{smallCount} | compress on", small, new(4, true)),
+    ("large-random | 1 stream", large, new(1, false, null, senderSecurity)),
+    ("large-random | 4 streams", large, new(4, false, null, senderSecurity)),
+    ("large-random | auto-tune", large, new(0, false, null, senderSecurity)),
+    ("text | compress off", text, new(4, false, null, senderSecurity)),
+    ("text | compress on", text, new(4, true, null, senderSecurity)),
+    ($"small x{smallCount} | compress off", small, new(4, false, null, senderSecurity)),
+    ($"small x{smallCount} | compress on", small, new(4, true, null, senderSecurity)),
 };
 
-await using var svc = new TransferService("bench");
 string currentDst = dstDir;
 svc.IncomingOffer += job => job.Accept(currentDst);
 svc.Start();

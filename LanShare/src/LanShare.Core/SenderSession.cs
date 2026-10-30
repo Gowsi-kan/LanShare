@@ -4,7 +4,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Hashing;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Threading.Channels;
 using K4os.Compression.LZ4;
 using Microsoft.Win32.SafeHandles;
@@ -17,7 +19,8 @@ namespace LanShare.Core;
 public sealed record SendOptions(
     int Streams = 0,
     bool Compress = true,
-    RateLimiter? Limiter = null
+    RateLimiter? Limiter = null,
+    SecurityContext? Security = null
 );
 
 /// <summary>
@@ -87,7 +90,10 @@ public sealed class SenderSession : IPausable
 
     readonly PauseGate _gate = new();
     readonly SemaphoreSlim _controlWrite = new(1, 1);
-    volatile NetworkStream? _control;
+    volatile Stream? _control;
+
+    readonly SecurityContext _security;
+    string _peerFp = "";
 
     public TransferState State { get; }
 
@@ -95,12 +101,15 @@ public sealed class SenderSession : IPausable
         IPEndPoint remote,
         string senderName,
         IEnumerable<(string Full, string Rel)> files,
-        SendOptions? options = null
+        SendOptions? options
     )
     {
         _remote = remote;
         _senderName = senderName;
-        _options = options ?? new SendOptions();
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _security =
+            options.Security
+            ?? throw new ArgumentException("SendOptions.Security is required.", nameof(options));
         _files = files.ToArray();
         if (_files.Length == 0)
             throw new ArgumentException("No files to send.");
@@ -141,6 +150,11 @@ public sealed class SenderSession : IPausable
         {
             State.Error = e.Message;
             State.Phase = e.Decision == Decision.Decline ? Phase.Declined : Phase.Failed;
+        }
+        catch (PairingRejectedException e)
+        {
+            State.Error = e.Message;
+            State.Phase = Phase.Declined;
         }
         catch (Exception e)
         {
@@ -191,14 +205,25 @@ public sealed class SenderSession : IPausable
     {
         int chunk = Protocol.ChunkSize;
         State.Phase = Phase.Connecting;
-        var (sock, cs) = await ConnectAsync(_remote, ct);
+        var (sock, cs, peerFp) = await ConnectSecureAsync(ct);
         using var csGuard = cs;
-        _control = cs;
+        _peerFp = peerFp;
         State.LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint);
 
         int initialStreams =
             _options.Streams > 0 ? Math.Clamp(_options.Streams, 1, 32) : InitialAutoStreams;
         await Wire.WriteHandshakeAsync(cs, Protocol.KindSession, ct);
+        await SecurityHandshake.RunAsync(
+            cs,
+            _security,
+            _senderName,
+            _security.Identity.Fingerprint,
+            peerFp,
+            _remote.Address.ToString(),
+            pairing => State.Phase = pairing ? Phase.Pairing : Phase.Connecting,
+            ct
+        );
+        _control = cs;
         var offer = new Offer(_id, _senderName, initialStreams, chunk, _entries);
         await Wire.WriteFrameAsync(cs, w => Wire.WriteOffer(w, offer), ct);
 
@@ -365,7 +390,7 @@ public sealed class SenderSession : IPausable
             }
         }
 
-        async Task RunPipelineAsync(NetworkStream ns, StreamCtx ctx, CancellationToken outer)
+        async Task RunPipelineAsync(Stream ns, StreamCtx ctx, CancellationToken outer)
         {
             using var pcts = CancellationTokenSource.CreateLinkedTokenSource(outer);
             var pt = pcts.Token;
@@ -515,7 +540,7 @@ public sealed class SenderSession : IPausable
                 {
                     token.ThrowIfCancellationRequested();
                     int ackedBefore = Volatile.Read(ref ctx.Acked);
-                    NetworkStream? ns = null;
+                    Stream? ns = null;
                     try
                     {
                         ns = await ConnectDataAsync(token);
@@ -698,14 +723,26 @@ public sealed class SenderSession : IPausable
         }
     }
 
-    async Task<NetworkStream> ConnectDataAsync(CancellationToken ct)
+    /// <summary>TCP + mutual TLS. The peer's fingerprint is returned for the trust check.</summary>
+    async Task<(Socket Socket, SslStream Stream, string PeerFp)> ConnectSecureAsync(
+        CancellationToken ct
+    )
     {
-        var (_, ns) = await ConnectAsync(_remote, ct);
+        var (sock, ns) = await ConnectTcpAsync(_remote, ct);
         try
         {
-            await Wire.WriteHandshakeAsync(ns, Protocol.KindData, ct);
-            await ns.WriteAsync(_id.ToByteArray(), ct);
-            return ns;
+            using var hs = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            hs.CancelAfter(TimeSpan.FromSeconds(10));
+            SslStream ssl;
+            try
+            {
+                ssl = await Tls.AsClientAsync(ns, _security.Identity, hs.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new IOException("Secure handshake timed out.");
+            }
+            return (sock, ssl, Tls.PeerFingerprint(ssl));
         }
         catch
         {
@@ -714,7 +751,28 @@ public sealed class SenderSession : IPausable
         }
     }
 
-    static async Task<(Socket Socket, NetworkStream Stream)> ConnectAsync(
+    async Task<Stream> ConnectDataAsync(CancellationToken ct)
+    {
+        var (_, ssl, fp) = await ConnectSecureAsync(ct);
+        try
+        {
+            // every data connection must end at the same device the control connection was paired with
+            if (fp != _peerFp)
+                throw new AuthenticationException(
+                    "The receiver's identity changed during the transfer."
+                );
+            await Wire.WriteHandshakeAsync(ssl, Protocol.KindData, ct);
+            await ssl.WriteAsync(_id.ToByteArray(), ct);
+            return ssl;
+        }
+        catch
+        {
+            ssl.Dispose();
+            throw;
+        }
+    }
+
+    static async Task<(Socket Socket, Stream Stream)> ConnectTcpAsync(
         IPEndPoint ep,
         CancellationToken ct
     )
