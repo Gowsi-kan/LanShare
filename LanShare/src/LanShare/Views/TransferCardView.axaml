@@ -6,17 +6,17 @@
     x:DataType="vm:TransferViewModel">
 
     <Border
-        Margin="0,0,0,8"
-        Padding="14"
+        Margin="0,0,0,10"
+        Padding="18"
         Classes="card">
-        <StackPanel Spacing="8">
+        <StackPanel Spacing="10">
 
             <!--  Header: glyph | file name (takes the leftover width and trims) | state badge  -->
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                 <TextBlock
                     VerticalAlignment="Center"
                     FontSize="16"
-                    Foreground="#4C8DFF"
+                    Foreground="#76A6FF"
                     Text="{Binding DirectionGlyph}" />
                 <TextBlock
                     Grid.Column="1"
@@ -31,7 +31,7 @@
                     MaxWidth="240"
                     Padding="10,3"
                     VerticalAlignment="Center"
-                    Background="#1F2430"
+                    Background="#1B2638"
                     CornerRadius="999">
                     <TextBlock
                         FontSize="12"
@@ -50,7 +50,8 @@
                 ToolTip.Tip="{Binding Subtitle}" />
 
             <ProgressBar
-                Height="8"
+                Height="6"
+                Margin="0,2"
                 Foreground="{Binding PhaseBrush}"
                 Maximum="100"
                 Minimum="0"

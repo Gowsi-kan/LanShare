@@ -8,17 +8,17 @@
     Width="920"
     Height="640"
     x:DataType="vm:PhoneAccessViewModel"
-    Background="#0E1014"
+    Background="#0A0F18"
     CanResize="False"
     SystemDecorations="None"
     WindowStartupLocation="CenterOwner">
 
-    <Border BorderBrush="#232834" BorderThickness="1">
+    <Border BorderBrush="#253248" BorderThickness="1">
         <Grid RowDefinitions="38,*">
 
             <Border
-                Background="#12151C"
-                BorderBrush="#232834"
+                Background="#0F1724"
+                BorderBrush="#253248"
                 BorderThickness="0,0,0,1">
                 <Grid ColumnDefinitions="*,Auto">
                     <Border Background="Transparent" PointerPressed="OnTitlePointerPressed">
@@ -95,7 +95,7 @@
                                         FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
                                         FontSize="30"
                                         FontWeight="Bold"
-                                        Foreground="#4C8DFF"
+                                        Foreground="#76A6FF"
                                         Text="{Binding Pin}" />
                                     <Button
                                         HorizontalAlignment="Left"

@@ -3,19 +3,19 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Width="460"
-    Background="#0E1014"
+    Background="#0A0F18"
     CanResize="False"
     SizeToContent="Height"
     SystemDecorations="None"
     Topmost="True"
     WindowStartupLocation="CenterScreen">
 
-    <Border BorderBrush="#2A3A66" BorderThickness="1">
+    <Border BorderBrush="#253248" BorderThickness="1">
         <StackPanel>
             <Border
                 Height="38"
-                Background="#12151C"
-                BorderBrush="#232834"
+                Background="#0F1724"
+                BorderBrush="#253248"
                 BorderThickness="0,0,0,1"
                 PointerPressed="OnTitlePointerPressed">
                 <TextBlock
@@ -43,7 +43,7 @@
                         FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
                         FontSize="34"
                         FontWeight="Bold"
-                        Foreground="#4C8DFF" />
+                        Foreground="#76A6FF" />
                 </Border>
 
                 <ScrollViewer

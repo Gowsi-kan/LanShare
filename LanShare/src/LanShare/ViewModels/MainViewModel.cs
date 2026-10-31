@@ -27,6 +27,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<Peer> Peers { get; } = [];
     public ObservableCollection<TransferViewModel> Transfers { get; } = [];
+    public bool HasTransfers => Transfers.Count > 0;
 
     public Notifier Notifier { get; } = new();
     public Func<bool> IsWindowActive { get; set; } = () => false;
@@ -109,6 +110,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public MainViewModel(AppSettings settings)
     {
+        Transfers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTransfers));
         DeviceName = Environment.MachineName;
         _settings = settings;
         RunInBackground = settings.RunInBackground;
@@ -310,7 +312,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (SelectedPeer is not { } peer)
         {
-            StatusMessage = "Select a device first.";
+            QueuePaths(paths);
+            StatusMessage = "";
             return;
         }
         StatusMessage = "Scanning files…";
