@@ -58,6 +58,7 @@ public sealed class ReceiverSession : IDisposable
 
     public TransferState State { get; }
     public Task AllDone => _allDone.Task;
+    public string PeerFingerprint { get; set; } = "";
 
     ReceiverSession(Offer offer, TransferState state, FileState[] files, string journalPath)
     {
@@ -108,6 +109,9 @@ public sealed class ReceiverSession : IDisposable
         }
 
         long free = FreeSpace(rootFull);
+        DiagLog.Info(
+            $"Receiver prepare: {files.Length} files, need {Format.Bytes(needed)}, free {Format.Bytes(free)}"
+        );
         if (needed + (64L << 20) > free)
             throw new InsufficientSpaceException(needed, free);
 
@@ -187,7 +191,7 @@ public sealed class ReceiverSession : IDisposable
     }
 
     /// <summary>Serves one data connection until the sender closes it or an I/O error occurs.</summary>
-    public async Task ReceiveLoopAsync(NetworkStream ns, CancellationToken outer)
+    public async Task ReceiveLoopAsync(Stream ns, CancellationToken outer)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(outer);
         var ct = cts.Token;
@@ -244,16 +248,18 @@ public sealed class ReceiverSession : IDisposable
         }
     }
 
-    async Task ReadFramesAsync(NetworkStream ns, ChannelWriter<Frame> writer, CancellationToken ct)
+    async Task ReadFramesAsync(Stream ns, ChannelWriter<Frame> writer, CancellationToken ct)
     {
         var hdr = new byte[Protocol.DataHeaderSize];
         try
         {
             while (true)
             {
+                long tn = Stopwatch.GetTimestamp();
                 if (await ns.ReadAsync(hdr.AsMemory(0, 1), ct) == 0)
                     break;
                 await ns.ReadExactlyAsync(hdr.AsMemory(1), ct);
+                State.AddStage(Stage.NetReceive, tn);
 
                 int fi = BinaryPrimitives.ReadInt32LittleEndian(hdr);
                 int ci = BinaryPrimitives.ReadInt32LittleEndian(hdr.AsSpan(4));
@@ -293,7 +299,7 @@ public sealed class ReceiverSession : IDisposable
         }
     }
 
-    async Task WriteFramesAsync(NetworkStream ns, ChannelReader<Frame> reader, CancellationToken ct)
+    async Task WriteFramesAsync(Stream ns, ChannelReader<Frame> reader, CancellationToken ct)
     {
         byte[]? scratch = null; // decompression buffer
         var ack = new byte[1];
@@ -309,10 +315,12 @@ public sealed class ReceiverSession : IDisposable
                     else
                     {
                         scratch ??= ArrayPool<byte>.Shared.Rent(_offer.ChunkSize);
+                        long td = Stopwatch.GetTimestamp();
                         int n = LZ4Codec.Decode(
                             f.Buf.AsSpan(0, f.WireLen),
                             scratch.AsSpan(0, f.RawLen)
                         );
+                        State.AddStage(Stage.Decompress, td);
                         if (n != f.RawLen)
                         {
                             ack[0] = Protocol.AckBad;
@@ -352,10 +360,15 @@ public sealed class ReceiverSession : IDisposable
     {
         if (f.Finalized)
             return true; // duplicate of an already-acked chunk
-        if (XxHash3.HashToUInt64(data.Span) != hash)
+        long th = Stopwatch.GetTimestamp();
+        bool hashOk = XxHash3.HashToUInt64(data.Span) == hash;
+        State.AddStage(Stage.Hash, th);
+        if (!hashOk)
             return false;
 
+        long tw = Stopwatch.GetTimestamp();
         await RandomAccess.WriteAsync(f.Handle!, data, (long)ci * _offer.ChunkSize, ct);
+        State.AddStage(Stage.Disk, tw);
 
         bool first;
         lock (f.Gate)
@@ -469,6 +482,7 @@ public sealed class ReceiverSession : IDisposable
 
     void FinalizeFile(FileState f)
     {
+        long t0 = Stopwatch.GetTimestamp();
         f.Finalized = true;
         var h = f.Handle!;
         RandomAccess.FlushToDisk(h);
@@ -476,11 +490,13 @@ public sealed class ReceiverSession : IDisposable
         File.Move(f.PartPath, UniquePath(f.FinalBase));
         TryDelete(f.StatePath);
         State.FileDone();
+        State.AddStage(Stage.Finalize, t0);
     }
 
     /// <summary>Flushes written data to disk, then atomically persists resume state (big-file bitmaps + small-file journal).</summary>
     public void Persist(TimeSpan? budget = null)
     {
+        long tPersist = Stopwatch.GetTimestamp();
         foreach (var f in _files)
         {
             if (f.Finalized || f.Handle is null || !f.Dirty)
@@ -513,6 +529,7 @@ public sealed class ReceiverSession : IDisposable
             }
         }
         PersistSmall(budget);
+        State.AddStage(Stage.Persist, tPersist);
     }
 
     void PersistSmall(TimeSpan? budget)
@@ -608,6 +625,7 @@ public sealed class ReceiverSession : IDisposable
         }
         catch (EndOfStreamException) { }
         catch (IOException) { }
+        catch (FormatException) { }
         return map;
     }
 
@@ -625,13 +643,19 @@ public sealed class ReceiverSession : IDisposable
             var d = r.ReadBytes(chunks);
             return d.Length == chunks ? d : null;
         }
-        catch (Exception ex) when (ex is IOException or EndOfStreamException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or EndOfStreamException
+                        or FormatException
+                        or UnauthorizedAccessException
+            )
         {
             return null;
         }
     }
 
-    static string Resolve(string rootFull, string rel)
+    internal static string Resolve(string rootFull, string rel)
     {
         var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)

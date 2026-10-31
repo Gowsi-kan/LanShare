@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using LanShare.Core;
 using LanShare.Services;
 using LanShare.ViewModels;
 using LanShare.Views;
@@ -44,6 +45,15 @@ public partial class App : Application
                         vm.QueuePaths(paths);
                     else
                         ShowMain();
+                });
+
+            SingleInstance.ReplaceRequested += () =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    DiagLog.Info(
+                        "A newer build was started: this instance is quitting so it can take over."
+                    );
+                    Quit();
                 });
 
             var initial = SingleInstance.PathsFrom(args);

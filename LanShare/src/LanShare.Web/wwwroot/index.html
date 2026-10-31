@@ -1,493 +1,459 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#0E1014" />
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta name="theme-color" content="#0E1014">
     <title>LanShare · {{DEVICE}}</title>
     <style>
-      :root {
-        --bg: #0e1014;
-        --card: #161a22;
-        --line: #232834;
-        --text: #e8ecf4;
-        --mute: #8a93a6;
-        --blue: #4c8dff;
-        --green: #34c77b;
-        --red: #ff5c6c;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0 auto;
-        max-width: 720px;
-        padding: 16px 16px 48px;
-        background: var(--bg);
-        color: var(--text);
-        font:
-          15px/1.45 system-ui,
-          -apple-system,
-          "Segoe UI",
-          Roboto,
-          sans-serif;
-      }
-      header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 4px 0 16px;
-      }
-      .logo {
-        width: 38px;
-        height: 38px;
-        border-radius: 11px;
-        background: var(--blue);
-        display: grid;
-        place-items: center;
-      }
-      h1 {
-        font-size: 18px;
-        margin: 0;
-      }
-      .sub {
-        color: var(--mute);
-        font-size: 13px;
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 16px;
-        margin-bottom: 14px;
-      }
-      h2 {
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        color: var(--mute);
-        margin: 0 0 12px;
-        font-weight: 600;
-      }
-      .btn {
-        display: block;
-        border: 0;
-        border-radius: 12px;
-        padding: 15px 18px;
-        font: 600 16px system-ui;
-        color: #fff;
-        background: var(--blue);
-        text-align: center;
-      }
-      .small {
-        display: inline-block;
-        border: 0;
-        border-radius: 10px;
-        padding: 7px 12px;
-        font: 600 13px system-ui;
-        color: var(--text);
-        background: #1f2430;
-      }
-      .item {
-        border-top: 1px solid var(--line);
-        padding: 12px 0;
-      }
-      .item:first-child {
-        border-top: 0;
-      }
-      .row {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-      }
-      .name {
-        font-weight: 600;
-        word-break: break-all;
-      }
-      .meta {
-        color: var(--mute);
-        font-size: 13px;
-      }
-      .bar {
-        height: 8px;
-        background: #1f2430;
-        border-radius: 99px;
-        overflow: hidden;
-        margin: 8px 0 6px;
-      }
-      .bar > i {
-        display: block;
-        height: 100%;
-        width: 0;
-        background: var(--blue);
-        transition: width 0.25s;
-      }
-      .ok .bar > i {
-        background: var(--green);
-      }
-      .err .bar > i {
-        background: var(--red);
-      }
-      .err .st {
-        color: var(--red);
-      }
-      .ok .st {
-        color: var(--green);
-      }
-      a.dl {
-        color: var(--blue);
-        text-decoration: none;
-        font-weight: 600;
-        white-space: nowrap;
-      }
-      #msg {
-        color: var(--red);
-        font-size: 13px;
-        min-height: 18px;
-        margin: 0 0 8px;
-      }
+        :root {
+            --bg: #0E1014;
+            --card: #161A22;
+            --line: #232834;
+            --text: #E8ECF4;
+            --mute: #8A93A6;
+            --blue: #4C8DFF;
+            --green: #34C77B;
+            --red: #FF5C6C
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0 auto;
+            max-width: 720px;
+            padding: 16px 16px 48px;
+            background: var(--bg);
+            color: var(--text);
+            font: 15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 4px 0 16px
+        }
+
+        .logo {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            background: var(--blue);
+            display: grid;
+            place-items: center
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0
+        }
+
+        .sub {
+            color: var(--mute);
+            font-size: 13px
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 14px
+        }
+
+        h2 {
+            font-size: 12px;
+            letter-spacing: .08em;
+            color: var(--mute);
+            margin: 0 0 12px;
+            font-weight: 600
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            border: 0;
+            border-radius: 12px;
+            padding: 15px 18px;
+            font: 600 16px system-ui;
+            color: #fff;
+            background: var(--blue);
+            text-align: center
+        }
+
+        .small {
+            display: inline-block;
+            border: 0;
+            border-radius: 10px;
+            padding: 7px 12px;
+            font: 600 13px system-ui;
+            color: var(--text);
+            background: #1F2430
+        }
+
+        input.pin {
+            width: 100%;
+            font: 700 28px ui-monospace,Menlo,Consolas,monospace;
+            letter-spacing: .3em;
+            text-align: center;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: #0E1014;
+            color: var(--text);
+            margin: 8px 0 12px
+        }
+
+        .item {
+            border-top: 1px solid var(--line);
+            padding: 12px 0
+        }
+
+            .item:first-child {
+                border-top: 0
+            }
+
+        .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center
+        }
+
+        .name {
+            font-weight: 600;
+            word-break: break-all
+        }
+
+        .meta {
+            color: var(--mute);
+            font-size: 13px
+        }
+
+        .bar {
+            height: 8px;
+            background: #1F2430;
+            border-radius: 99px;
+            overflow: hidden;
+            margin: 8px 0 6px
+        }
+
+            .bar > i {
+                display: block;
+                height: 100%;
+                width: 0;
+                background: var(--blue);
+                transition: width .25s
+            }
+
+        .ok .bar > i {
+            background: var(--green)
+        }
+
+        .err .bar > i {
+            background: var(--red)
+        }
+
+        .err .st {
+            color: var(--red)
+        }
+
+        .ok .st {
+            color: var(--green)
+        }
+
+        a.dl {
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 600;
+            white-space: nowrap
+        }
+
+        #msg, #lmsg {
+            color: var(--red);
+            font-size: 13px;
+            min-height: 18px;
+            margin: 0 0 8px
+        }
     </style>
-  </head>
-  <body>
+</head>
+<body>
     <header>
-      <div class="logo">
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 10 12"
-          fill="none"
-          stroke="#fff"
-          stroke-width="1.4"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M0 3H10M7 0L10 3L7 6M10 9H0M3 6L0 9L3 12" />
-        </svg>
-      </div>
-      <div>
-        <h1>LanShare</h1>
-        <div class="sub">{{DEVICE}} · <span id="free"></span></div>
-      </div>
+        <div class="logo"><svg width="20" height="20" viewBox="0 0 10 12" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M0 3H10M7 0L10 3L7 6M10 9H0M3 6L0 9L3 12" /></svg></div>
+        <div><h1>LanShare</h1><div class="sub">{{DEVICE}} · <span id="free"></span></div></div>
     </header>
-    <div id="msg"></div>
 
-    <section class="card">
-      <h2>SEND TO PC</h2>
-      <label class="btn" for="pick">Choose files from this phone</label>
-      <input id="pick" type="file" multiple hidden />
-      <div id="ups" style="margin-top: 8px"></div>
-      <div class="meta" style="margin-top: 8px">
-        Keep this page open and the screen on while uploading.
-      </div>
+    <section id="login" class="card" style="display:none">
+        <h2>ENTER THE PIN SHOWN ON THE PC</h2>
+        <input id="pin" class="pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
+        <button id="loginBtn" class="btn">Connect</button>
+        <div id="lmsg" style="margin-top:10px"></div>
     </section>
 
-    <section class="card">
-      <h2>DOWNLOAD FROM PC</h2>
-      <div id="dls" class="meta">Loading…</div>
-    </section>
+    <div id="main" style="display:none">
+        <div id="msg"></div>
+
+        <section class="card">
+            <h2>SEND TO PC</h2>
+            <label class="btn" for="pick">Choose files from this phone</label>
+            <input id="pick" type="file" multiple hidden>
+            <div id="ups" style="margin-top:8px"></div>
+            <div class="meta" style="margin-top:8px">The PC asks for approval first. Keep this page open and the screen on while uploading.</div>
+        </section>
+
+        <section class="card">
+            <h2>DOWNLOAD FROM PC</h2>
+            <div id="dls" class="meta">Loading…</div>
+        </section>
+    </div>
 
     <script>
-      (() => {
-        "use strict";
-        const $ = (s) => document.querySelector(s);
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        const el = (tag, cls, text) => {
-          const e = document.createElement(tag);
-          if (cls) e.className = cls;
-          if (text != null) e.textContent = text;
-          return e;
-        };
-        const fmt = (n) => {
-          const u = ["B", "KB", "MB", "GB", "TB"];
-          let i = 0;
-          while (n >= 1024 && i < u.length - 1) {
-            n /= 1024;
-            i++;
-          }
-          return (i ? n.toFixed(1) : n) + " " + u[i];
-        };
+        (() => {
+            'use strict';
+            const $ = s => document.querySelector(s);
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+            const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+            const fmt = n => { const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + ' ' + u[i]; };
 
-        // ---- token + client id (token is removed from the address bar after first load)
-        const qs = new URLSearchParams(location.search);
-        let TOKEN = qs.get("t") || "";
-        try {
-          if (TOKEN) sessionStorage.setItem("t", TOKEN);
-          else TOKEN = sessionStorage.getItem("t") || "";
-        } catch {}
-        if (qs.get("t")) history.replaceState(null, "", location.pathname);
+            // ---- link token (from the QR code), session (after the PIN), client id
+            const qs = new URLSearchParams(location.search);
+            let LINK = qs.get('t') || '';
+            try { if (LINK) sessionStorage.setItem('t', LINK); else LINK = sessionStorage.getItem('t') || ''; } catch { }
+            if (qs.get('t')) history.replaceState(null, '', location.pathname);
+            let SESSION = '';
+            try { SESSION = sessionStorage.getItem('s') || ''; } catch { }
 
-        let CID = null;
-        try {
-          CID = localStorage.getItem("cid");
-        } catch {}
-        if (!CID) {
-          CID = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>
-            b.toString(16).padStart(2, "0"),
-          ).join("");
-          try {
-            localStorage.setItem("cid", CID);
-          } catch {}
-        }
-
-        const api = (path, opt = {}) =>
-          fetch(path, {
-            ...opt,
-            headers: { "X-Token": TOKEN, ...(opt.headers || {}) },
-            cache: "no-store",
-          });
-
-          // ---- downloads list (PC -> phone) with live progress reported by the PC
-          const dlRows = new Map();
-          let dlActive = false;
-
-          function makeDlRow(f) {
-              const root = el('div', 'item');
-              const top = el('div', 'row');
-              const left = el('div');
-              left.append(el('div', 'name', f.name), el('div', 'meta', fmt(f.size)));
-              const a = el('a', 'dl', 'Download');
-              a.href = '/api/files/' + encodeURIComponent(f.id) + '?cid=' + CID + '&t=' + encodeURIComponent(TOKEN);
-              a.setAttribute('download', f.name);
-              top.append(left, a);
-              const bar = el('div', 'bar'); const fill = el('i'); bar.append(fill);
-              const st = el('div', 'meta st');
-              bar.style.display = 'none'; st.style.display = 'none';
-              root.append(top, bar, st);
-              return { root, bar, fill, st, last: null };
-          }
-
-          function updateDl(r, f) {
-              const d = f.dl;
-              if (!d) { r.bar.style.display = 'none'; r.st.style.display = 'none'; r.root.className = 'item'; r.last = null; return; }
-              r.bar.style.display = ''; r.st.style.display = '';
-              r.fill.style.width = (d.total ? Math.min(100, d.done * 100 / d.total) : 100) + '%';
-              const now = performance.now();
-              let rate = 0;
-              if (r.last && d.phase === 'transferring') {
-                  const dt = (now - r.last.t) / 1000;
-                  if (dt > 0) rate = Math.max(0, (d.done - r.last.done) / dt);
-              }
-              r.last = { t: now, done: d.done };
-              if (d.phase === 'transferring') {
-                  dlActive = true; r.root.className = 'item';
-                  r.st.textContent = fmt(d.done) + ' / ' + fmt(d.total) + (rate > 0 ? ' · ' + fmt(rate) + '/s' : '');
-              } else if (d.phase === 'completed') {
-                  r.root.className = 'item ok'; r.st.textContent = 'Sent to this phone ✓';
-              } else if (d.phase === 'paused') {
-                  r.root.className = 'item'; r.st.textContent = 'Paused at ' + fmt(d.done) + ' / ' + fmt(d.total) + ' — tap Download to resume';
-              } else {
-                  r.root.className = 'item err'; r.st.textContent = d.phase;
-              }
-          }
-
-          async function refresh() {
-              try {
-                  const r = await api('/api/info?cid=' + CID);
-                  if (r.status === 401) { $('#msg').textContent = 'Session expired. Scan the QR code on the PC again.'; return; }
-                  const info = await r.json();
-                  $('#msg').textContent = '';
-                  $('#free').textContent = 'PC free: ' + fmt(info.free);
-                  const box = $('#dls');
-                  dlActive = false;
-                  if (!info.files.length) {
-                      box.textContent = 'Nothing shared yet. On the PC, open “Phone…” and add files to share.';
-                      dlRows.clear();
-                      return;
-                  }
-                  if (!dlRows.size) box.textContent = '';
-                  const seen = new Set();
-                  for (const f of info.files) {
-                      seen.add(f.id);
-                      let row = dlRows.get(f.id);
-                      if (!row) { row = makeDlRow(f); dlRows.set(f.id, row); box.append(row.root); }
-                      updateDl(row, f);
-                  }
-                  for (const [id, row] of dlRows) if (!seen.has(id)) { row.root.remove(); dlRows.delete(id); }
-              } catch { $('#msg').textContent = 'Cannot reach the PC. Check Wi-Fi and that phone access is running.'; }
-          }
-          (async function loop() { await refresh(); setTimeout(loop, dlActive ? 1000 : 4000); })();
-
-        // ---- uploads (phone -> PC), sequential, resumable
-        const queue = [];
-        let running = false;
-        $("#pick").addEventListener("change", (e) => {
-          for (const f of e.target.files) {
-            const row = makeRow(f);
-            queue.push({ f, row });
-          }
-          e.target.value = "";
-          pump();
-        });
-
-        async function pump() {
-          if (running) return;
-          running = true;
-          while (queue.length) {
-            const { f, row } = queue.shift();
-            if (!row.cancelled) await uploadOne(f, row);
-          }
-          running = false;
-        }
-
-        function makeRow(file) {
-          const root = el("div", "item");
-          const top = el("div", "row");
-          const nm = el("div", "name", file.name);
-          const cancel = el("button", "small", "Cancel");
-          top.append(nm, cancel);
-          const bar = el("div", "bar");
-          const fill = el("i");
-          bar.append(fill);
-          const st = el("div", "meta st", "Queued");
-          root.append(top, bar, st);
-          $("#ups").prepend(root);
-
-          let last = 0,
-            lastDone = 0,
-            rate = 0;
-          const row = {
-            cancelled: false,
-            xhr: null,
-            base: "",
-            state(t, cls) {
-              st.textContent = t;
-              if (cls) root.className = "item " + cls;
-            },
-            progress(done, total) {
-              const now = performance.now();
-              if (!last) {
-                last = now;
-                lastDone = done;
-              }
-              if (now - last > 600) {
-                rate = (done - lastDone) / ((now - last) / 1000);
-                last = now;
-                lastDone = done;
-              }
-              fill.style.width =
-                (total ? Math.min(100, (done * 100) / total) : 100) + "%";
-              st.textContent =
-                fmt(done) +
-                " / " +
-                fmt(total) +
-                (rate > 0 ? " · " + fmt(rate) + "/s" : "");
-            },
-            done(name) {
-              fill.style.width = "100%";
-              cancel.remove();
-              row.state("Saved on PC as " + name, "ok");
-            },
-            fail(msg) {
-              cancel.remove();
-              row.state(msg, "err");
-            },
-          };
-          cancel.onclick = async () => {
-            row.cancelled = true;
-            try {
-              row.xhr && row.xhr.abort();
-            } catch {}
-            if (row.base) {
-              try {
-                await api(row.base, { method: "DELETE" });
-              } catch {}
+            let CID = null;
+            try { CID = localStorage.getItem('cid'); } catch { }
+            if (!CID) {
+                CID = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+                try { localStorage.setItem('cid', CID); } catch { }
             }
-            cancel.remove();
-            row.state("Cancelled", "err");
-          };
-          return row;
-        }
 
-        function put(base, file, offset, row) {
-          return new Promise((resolve, reject) => {
-            const x = new XMLHttpRequest();
-            row.xhr = x;
-            x.open("PUT", base + "&offset=" + offset);
-            x.setRequestHeader("X-Token", TOKEN);
-            x.upload.onprogress = (e) =>
-              row.progress(offset + e.loaded, file.size);
-            x.onload = () => {
-              let j = {};
-              try {
-                j = JSON.parse(x.responseText || "{}");
-              } catch {}
-              resolve({ status: x.status, json: j });
-            };
-            x.onerror = () => reject(new Error("network"));
-            x.onabort = () => reject(new Error("abort"));
-            x.send(offset > 0 ? file.slice(offset) : file);
-          });
-        }
+            const api = (path, opt = {}) => fetch(path, { ...opt, headers: { 'X-Session': SESSION, ...(opt.headers || {}) }, cache: 'no-store' });
 
-        async function serverOffset(base) {
-          const r = await api(
-            base.replace("/api/upload?", "/api/upload/status?"),
-          );
-          return (await r.json()).received || 0;
-        }
+            function showLogin(msg) { $('#login').style.display = ''; $('#main').style.display = 'none'; $('#lmsg').textContent = msg || ''; SESSION = ''; try { sessionStorage.removeItem('s'); } catch { } }
+            function showMain() { $('#login').style.display = 'none'; $('#main').style.display = ''; }
 
-        async function uploadOne(file, row) {
-          const base =
-            "/api/upload?cid=" +
-            CID +
-            "&name=" +
-            encodeURIComponent(file.name) +
-            "&size=" +
-            file.size +
-            "&mt=" +
-            (file.lastModified || 0);
-          row.base = base;
-          let offset = 0,
-            fails = 0;
-          try {
-            offset = await serverOffset(base);
-          } catch {}
-          row.state("Uploading…");
-
-          while (!row.cancelled) {
-            try {
-              const res = await put(base, file, offset, row);
-              if (res.status === 200) {
-                row.done(res.json.name || file.name);
-                refresh();
-                return;
-              }
-              if (res.status === 202 || res.status === 409) {
-                offset = res.json.received ?? offset;
-                if (++fails > 40) return row.fail("Upload keeps stalling");
-                await sleep(300);
-                continue;
-              }
-              if (res.status === 429) {
-                row.state("Waiting for a free upload slot…");
-                await sleep(2000);
-                continue;
-              }
-              if (res.status === 401)
-                return row.fail("Session expired. Scan the QR code again.");
-              if (res.status === 507)
-                return row.fail(
-                  res.json.error || "Not enough free space on the PC",
-                );
-              return row.fail(
-                (res.json && res.json.error) ||
-                  "Rejected by the PC (" + res.status + ")",
-              );
-            } catch (e) {
-              if (row.cancelled) return;
-              if (++fails > 40) return row.fail("Connection lost");
-              row.state("Connection lost, retrying (" + fails + ")…");
-              await sleep(Math.min(1000 * fails, 5000));
-              try {
-                offset = await serverOffset(base);
-              } catch {}
+            async function login() {
+                const pin = $('#pin').value.trim();
+                if (pin.length < 6) { $('#lmsg').textContent = 'Enter all 6 digits.'; return; }
+                try {
+                    const r = await fetch('/api/login', { method: 'POST', headers: { 'X-Token': LINK, 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+                    const j = await r.json().catch(() => ({}));
+                    if (r.ok) {
+                        SESSION = j.session; try { sessionStorage.setItem('s', SESSION); } catch { }
+                        $('#pin').value = ''; $('#lmsg').textContent = ''; showMain(); loop();
+                    } else if (r.status === 401 && !j.error) $('#lmsg').textContent = 'This link is no longer valid. Scan the QR code on the PC again.';
+                    else $('#lmsg').textContent = j.error || ('Login failed (' + r.status + ')');
+                } catch { $('#lmsg').textContent = 'Cannot reach the PC.'; }
             }
-          }
-        }
-      })();
+            $('#loginBtn').addEventListener('click', login);
+            $('#pin').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+            // ---- downloads list (PC -> phone) with live progress reported by the PC
+            const dlRows = new Map();
+            let dlActive = false, looping = false;
+
+            function makeDlRow(f) {
+                const root = el('div', 'item');
+                const top = el('div', 'row');
+                const left = el('div');
+                left.append(el('div', 'name', f.name), el('div', 'meta', fmt(f.size)));
+                const a = el('a', 'dl', 'Download');
+                a.href = '/api/files/' + encodeURIComponent(f.id) + '?cid=' + CID + '&s=' + encodeURIComponent(SESSION);
+                a.setAttribute('download', f.name);
+                top.append(left, a);
+                const bar = el('div', 'bar'); const fill = el('i'); bar.append(fill);
+                const st = el('div', 'meta st');
+                bar.style.display = 'none'; st.style.display = 'none';
+                root.append(top, bar, st);
+                return { root, bar, fill, st, last: null };
+            }
+
+            function updateDl(r, f) {
+                const d = f.dl;
+                if (!d) { r.bar.style.display = 'none'; r.st.style.display = 'none'; r.root.className = 'item'; r.last = null; return; }
+                r.bar.style.display = ''; r.st.style.display = '';
+                r.fill.style.width = (d.total ? Math.min(100, d.done * 100 / d.total) : 100) + '%';
+                const now = performance.now();
+                let rate = 0;
+                if (r.last && d.phase === 'transferring') {
+                    const dt = (now - r.last.t) / 1000;
+                    if (dt > 0) rate = Math.max(0, (d.done - r.last.done) / dt);
+                }
+                r.last = { t: now, done: d.done };
+                if (d.phase === 'transferring') {
+                    dlActive = true; r.root.className = 'item';
+                    r.st.textContent = fmt(d.done) + ' / ' + fmt(d.total) + (rate > 0 ? ' · ' + fmt(rate) + '/s' : '');
+                } else if (d.phase === 'completed') { r.root.className = 'item ok'; r.st.textContent = 'Sent to this phone ✓'; }
+                else if (d.phase === 'paused') { r.root.className = 'item'; r.st.textContent = 'Paused at ' + fmt(d.done) + ' / ' + fmt(d.total) + ' — tap Download to resume'; }
+                else { r.root.className = 'item err'; r.st.textContent = d.phase; }
+            }
+
+            async function refresh() {
+                try {
+                    const r = await api('/api/info?cid=' + CID);
+                    if (r.status === 401) { showLogin('Session expired. Enter the PIN again.'); return false; }
+                    const info = await r.json();
+                    $('#msg').textContent = '';
+                    $('#free').textContent = 'PC free: ' + fmt(info.free);
+                    const box = $('#dls');
+                    dlActive = false;
+                    if (!info.files.length) {
+                        box.textContent = 'Nothing shared yet. On the PC, open “Phone…” and add files to share.';
+                        dlRows.clear();
+                        return true;
+                    }
+                    if (!dlRows.size) box.textContent = '';
+                    const seen = new Set();
+                    for (const f of info.files) {
+                        seen.add(f.id);
+                        let row = dlRows.get(f.id);
+                        if (!row) { row = makeDlRow(f); dlRows.set(f.id, row); box.append(row.root); }
+                        updateDl(row, f);
+                    }
+                    for (const [id, row] of dlRows) if (!seen.has(id)) { row.root.remove(); dlRows.delete(id); }
+                    return true;
+                } catch { $('#msg').textContent = 'Cannot reach the PC. Check Wi-Fi and that phone access is running.'; return true; }
+            }
+
+            async function loop() {
+                if (looping) return; looping = true;
+                while (SESSION) { if (!(await refresh())) break; await sleep(dlActive ? 1000 : 4000); }
+                looping = false;
+            }
+
+            // ---- uploads (phone -> PC): one approval for the whole batch, then sequential resumable uploads
+            const queue = []; let running = false;
+            $('#pick').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+
+            function failAll(rows, msg) { for (const x of rows) x.row.fail(msg); }
+
+            async function addFiles(files) {
+                if (!files.length) return;
+                const rows = files.map(f => ({ f, row: makeRow(f) }));
+                for (const x of rows) x.row.state('Waiting for approval on the PC…');
+                let rid;
+                try {
+                    const r = await api('/api/upload/request', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ files: files.map(f => ({ name: f.name, size: f.size })) })
+                    });
+                    if (r.status === 401) { failAll(rows, 'Session expired'); showLogin('Session expired. Enter the PIN again.'); return; }
+                    const j = await r.json().catch(() => ({}));
+                    if (!r.ok) return failAll(rows, j.error || 'Rejected by the PC');
+                    rid = j.id;
+                    let state = j.state;
+                    while (state === 'pending') {
+                        await sleep(1000);
+                        if (rows.every(x => x.row.cancelled)) return;
+                        const s = await api('/api/upload/request/' + rid);
+                        if (!s.ok) return failAll(rows, 'Request expired');
+                        state = (await s.json()).state;
+                    }
+                    if (state !== 'approved') return failAll(rows, 'Declined on the PC');
+                } catch { return failAll(rows, 'Cannot reach the PC'); }
+                for (const x of rows) { x.rid = rid; queue.push(x); }
+                pump();
+            }
+
+            async function pump() {
+                if (running) return; running = true;
+                while (queue.length) { const x = queue.shift(); if (!x.row.cancelled) await uploadOne(x.f, x.row, x.rid); }
+                running = false;
+            }
+
+            function makeRow(file) {
+                const root = el('div', 'item');
+                const top = el('div', 'row');
+                const nm = el('div', 'name', file.name);
+                const cancel = el('button', 'small', 'Cancel');
+                top.append(nm, cancel);
+                const bar = el('div', 'bar'); const fill = el('i'); bar.append(fill);
+                const st = el('div', 'meta st', 'Queued');
+                root.append(top, bar, st);
+                $('#ups').prepend(root);
+
+                let last = 0, lastDone = 0, rate = 0;
+                const row = {
+                    cancelled: false, xhr: null, base: '',
+                    state(t, cls) { st.textContent = t; if (cls) root.className = 'item ' + cls; },
+                    progress(done, total) {
+                        const now = performance.now();
+                        if (!last) { last = now; lastDone = done; }
+                        if (now - last > 600) { rate = (done - lastDone) / ((now - last) / 1000); last = now; lastDone = done; }
+                        fill.style.width = (total ? Math.min(100, done * 100 / total) : 100) + '%';
+                        st.textContent = fmt(done) + ' / ' + fmt(total) + (rate > 0 ? ' · ' + fmt(rate) + '/s' : '');
+                    },
+                    done(name) { fill.style.width = '100%'; cancel.remove(); row.state('Saved on PC as ' + name, 'ok'); },
+                    fail(msg) { cancel.remove(); row.state(msg, 'err'); },
+                };
+                cancel.onclick = async () => {
+                    row.cancelled = true;
+                    try { row.xhr && row.xhr.abort(); } catch { }
+                    if (row.base) { try { await api(row.base, { method: 'DELETE' }); } catch { } }
+                    cancel.remove(); row.state('Cancelled', 'err');
+                };
+                return row;
+            }
+
+            function put(base, file, offset, row) {
+                return new Promise((resolve, reject) => {
+                    const x = new XMLHttpRequest();
+                    row.xhr = x;
+                    x.open('PUT', base + '&offset=' + offset);
+                    x.setRequestHeader('X-Session', SESSION);
+                    x.upload.onprogress = e => row.progress(offset + e.loaded, file.size);
+                    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText || '{}'); } catch { } resolve({ status: x.status, json: j }); };
+                    x.onerror = () => reject(new Error('network'));
+                    x.onabort = () => reject(new Error('abort'));
+                    x.send(offset > 0 ? file.slice(offset) : file);
+                });
+            }
+
+            async function serverOffset(base) {
+                const r = await api(base.replace('/api/upload?', '/api/upload/status?'));
+                return (await r.json()).received || 0;
+            }
+
+            async function uploadOne(file, row, rid) {
+                const base = '/api/upload?cid=' + CID + '&rid=' + rid + '&name=' + encodeURIComponent(file.name) + '&size=' + file.size + '&mt=' + (file.lastModified || 0);
+                row.base = base;
+                let offset = 0, fails = 0;
+                try { offset = await serverOffset(base); } catch { }
+                row.state('Uploading…');
+
+                while (!row.cancelled) {
+                    try {
+                        const res = await put(base, file, offset, row);
+                        if (res.status === 200) { row.done(res.json.name || file.name); refresh(); return; }
+                        if (res.status === 202 || res.status === 409) {
+                            offset = res.json.received ?? offset;
+                            if (++fails > 40) return row.fail('Upload keeps stalling');
+                            await sleep(300); continue;
+                        }
+                        if (res.status === 429) { row.state('Waiting for a free upload slot…'); await sleep(2000); continue; }
+                        if (res.status === 401) { row.fail('Session expired'); showLogin('Session expired. Enter the PIN again.'); return; }
+                        if (res.status === 403) return row.fail('Not approved on the PC');
+                        if (res.status === 507) return row.fail(res.json.error || 'Not enough free space on the PC');
+                        return row.fail((res.json && res.json.error) || 'Rejected by the PC (' + res.status + ')');
+                    } catch (e) {
+                        if (row.cancelled) return;
+                        if (++fails > 40) return row.fail('Connection lost');
+                        row.state('Connection lost, retrying (' + fails + ')…');
+                        await sleep(Math.min(1000 * fails, 5000));
+                        try { offset = await serverOffset(base); } catch { }
+                    }
+                }
+            }
+
+            // ---- start
+            if (SESSION) { showMain(); loop(); } else showLogin('');
+        })();
     </script>
-  </body>
+</body>
 </html>

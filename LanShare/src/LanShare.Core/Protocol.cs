@@ -14,6 +14,7 @@ public enum Phase
     Cancelled,
     Declined,
     Paused,
+    Pairing,
 }
 
 public enum Decision : byte
@@ -34,7 +35,7 @@ public static class Protocol
     public const int BundleFile = -1; // fileIdx marker: frame carries a bundle of small files
     public const int SmallFileLimit = 256 * 1024;
     public const int MaxBundleFiles = 4096;
-    public const int PipelineDepth = 4; // unacked frames in flight per stream
+    public const int PipelineDepth = 8; // unacked frames in flight per stream
 
     public const byte KindSession = 1;
     public const byte KindData = 2;
@@ -147,7 +148,23 @@ internal static class Wire
 
     public static Offer ReadOffer(BinaryReader r)
     {
-        var id = new Guid(r.ReadBytes(16));
+        try
+        {
+            return ReadOfferCore(r);
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException or OverflowException)
+        {
+            // BinaryReader reports a malformed string length (or similar) with these types: treat it as a protocol error
+            throw new InvalidDataException("Malformed offer.", e);
+        }
+    }
+
+    static Offer ReadOfferCore(BinaryReader r)
+    {
+        var idBytes = r.ReadBytes(16);
+        if (idBytes.Length != 16)
+            throw new EndOfStreamException();
+        var id = new Guid(idBytes);
         var name = r.ReadString();
         int streams = r.ReadInt32();
         int chunk = r.ReadInt32();

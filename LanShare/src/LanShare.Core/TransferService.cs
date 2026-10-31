@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 
 namespace LanShare.Core;
@@ -56,8 +57,13 @@ public sealed class TransferService : IAsyncDisposable
     public int Port { get; private set; }
 
     public event Action<IncomingJob>? IncomingOffer;
+    readonly SecurityContext _security;
 
-    public TransferService(string deviceName) => DeviceName = deviceName;
+    public TransferService(string deviceName, SecurityContext security)
+    {
+        DeviceName = deviceName;
+        _security = security;
+    }
 
     public void Start()
     {
@@ -123,53 +129,91 @@ public sealed class TransferService : IAsyncDisposable
 
     async Task HandleConnectionAsync(Socket sock, CancellationToken ct)
     {
+        var who = sock.RemoteEndPoint?.ToString() ?? "?";
         try
         {
             SocketTuning.Apply(sock);
-            using var ns = new NetworkStream(sock, ownsSocket: true);
+            using var raw = new NetworkStream(sock, ownsSocket: true);
 
+            SslStream tls;
             byte kind;
             using (var hs = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
-                hs.CancelAfter(TimeSpan.FromSeconds(5));
-                kind = await Wire.ReadHandshakeAsync(ns, hs.Token);
+                hs.CancelAfter(TimeSpan.FromSeconds(10));
+                tls = await Tls.AsServerAsync(raw, _security.Identity, hs.Token);
+                kind = await Wire.ReadHandshakeAsync(tls, hs.Token);
             }
+            using var secure = tls;
+            var peerFp = Tls.PeerFingerprint(tls);
 
             if (kind == Protocol.KindSession)
-                await HandleControlAsync(sock, ns, ct);
+                await HandleControlAsync(sock, tls, peerFp, ct);
             else if (kind == Protocol.KindData)
-                await HandleDataAsync(ns, ct);
+                await HandleDataAsync(tls, peerFp, ct);
         }
         catch (Exception e)
         {
-            Trace.TraceWarning($"Connection error: {e.Message}");
+            DiagLog.Warn($"Connection from {who} failed: {e.GetType().Name}: {e.Message}");
         }
     }
 
-    async Task HandleDataAsync(NetworkStream ns, CancellationToken ct)
+    async Task HandleDataAsync(Stream ns, string peerFp, CancellationToken ct)
     {
         var idBytes = new byte[16];
         await ns.ReadExactlyAsync(idBytes, ct);
-        if (!_sessions.TryGetValue(new Guid(idBytes), out var session))
+        // the data connection must come from the same certificate that was authenticated on the control connection
+        if (
+            !_sessions.TryGetValue(new Guid(idBytes), out var session)
+            || session.PeerFingerprint != peerFp
+        )
             return;
         await session.ReceiveLoopAsync(ns, ct);
     }
 
-    async Task HandleControlAsync(Socket sock, NetworkStream ns, CancellationToken serviceCt)
+    async Task HandleControlAsync(
+        Socket sock,
+        Stream ns,
+        string peerFp,
+        CancellationToken serviceCt
+    )
     {
-        Offer offer;
-        using (var r = await Wire.ReadFrameAsync(ns, serviceCt))
-            offer = Wire.ReadOffer(r);
-
         var remote = sock.RemoteEndPoint is IPEndPoint rep
             ? NetInfo.Normalize(rep.Address).ToString()
             : "?";
+        string peerName;
+        try
+        {
+            peerName = await SecurityHandshake.RunAsync(
+                ns,
+                _security,
+                DeviceName,
+                _security.Identity.Fingerprint,
+                peerFp,
+                remote,
+                null,
+                serviceCt
+            );
+        }
+        catch (PairingRejectedException e)
+        {
+            DiagLog.Info($"Pairing with {remote} failed: {e.Message}");
+            return;
+        }
+
+        Offer offer;
+        using (var r = await Wire.ReadFrameAsync(ns, serviceCt))
+            offer = Wire.ReadOffer(r);
         var state = new TransferState(offer.TotalBytes, offer.Files.Count)
         {
             Phase = Phase.AwaitingYou,
             LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint),
+            LinkName = NetInfo.DescribeLink(sock.LocalEndPoint),
         };
-        var job = new IncomingJob(offer, $"{offer.SenderName} ({remote})", state);
+        var job = new IncomingJob(offer, $"{peerName} ({remote})", state);
+
+        DiagLog.Info(
+            $"Incoming offer from {peerName} ({remote}): {offer.Files.Count} files, {Format.Bytes(offer.TotalBytes)}"
+        );
 
         job.ControlSender = b => SendControlAsync(ns, job, b);
 
@@ -205,7 +249,9 @@ public sealed class TransferService : IAsyncDisposable
 
             try
             {
+                long tPrepare = Stopwatch.GetTimestamp();
                 session = await Task.Run(() => ReceiverSession.Prepare(offer, dir, state), token);
+                state.AddStage(Stage.Prepare, tPrepare);
             }
             catch (InsufficientSpaceException e)
             {
@@ -215,6 +261,7 @@ public sealed class TransferService : IAsyncDisposable
                 return;
             }
 
+            session.PeerFingerprint = peerFp;
             _sessions[offer.SessionId] = session;
             var maps = session.SnapshotDone();
             await Wire.WriteFrameAsync(
@@ -233,6 +280,7 @@ public sealed class TransferService : IAsyncDisposable
             long lastChange = Stopwatch.GetTimestamp();
             long lastStreams = lastChange;
 
+            int persistTick = 0;
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
             while (true)
             {
@@ -242,10 +290,11 @@ public sealed class TransferService : IAsyncDisposable
                     break;
                 if (winner == peerGone)
                     throw new IOException("Sender disconnected.");
-                await Task.Run(
-                    () => session.Persist(TimeSpan.FromSeconds(1.5)),
-                    CancellationToken.None
-                );
+                if (++persistTick % 15 == 0) // every ~30 s: each persist fsyncs, and fsync of a big file stalls its writes
+                    await Task.Run(
+                        () => session.Persist(TimeSpan.FromSeconds(3)),
+                        CancellationToken.None
+                    );
 
                 // watchdogs: a sender that is alive on the control connection but never delivers must not hang us forever
                 long nowTs = Stopwatch.GetTimestamp();
@@ -294,13 +343,16 @@ public sealed class TransferService : IAsyncDisposable
         }
         finally
         {
+            DiagLog.Info(
+                $"Incoming session ended: {state.Phase}{(string.IsNullOrEmpty(state.Error) ? "" : " — " + state.Error)}"
+            );
             _sessions.TryRemove(offer.SessionId, out _);
             session?.Dispose();
             cts.Cancel();
         }
     }
 
-    static async Task ControlLoopAsync(NetworkStream ns, TransferState state, CancellationToken ct)
+    static async Task ControlLoopAsync(Stream ns, TransferState state, CancellationToken ct)
     {
         var one = new byte[1];
         while (true)
@@ -320,7 +372,7 @@ public sealed class TransferService : IAsyncDisposable
         }
     }
 
-    static async Task SendControlAsync(NetworkStream ns, IncomingJob job, byte b)
+    static async Task SendControlAsync(Stream ns, IncomingJob job, byte b)
     {
         try
         {

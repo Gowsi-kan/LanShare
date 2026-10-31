@@ -4,7 +4,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Hashing;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Threading.Channels;
 using K4os.Compression.LZ4;
 using Microsoft.Win32.SafeHandles;
@@ -12,12 +14,13 @@ using Microsoft.Win32.SafeHandles;
 namespace LanShare.Core;
 
 /// <param name="Streams">Parallel data connections. 0 = auto-tune (starts at 2, adds streams until throughput plateaus, max 8).</param>
-/// <param name="Compress">Adaptive LZ4: tried per chunk, backs off automatically on incompressible data.</param>
+/// <param name="Compress">Adaptive LZ4: backs off when chunks are incompressible or compression costs more than it saves.</param>
 /// <param name="Limiter">Optional shared outgoing bandwidth limiter.</param>
 public sealed record SendOptions(
     int Streams = 0,
     bool Compress = true,
-    RateLimiter? Limiter = null
+    RateLimiter? Limiter = null,
+    SecurityContext? Security = null
 );
 
 /// <summary>
@@ -42,6 +45,7 @@ public sealed class SenderSession : IPausable
         public int RawLen,
             WireLen;
         public ulong Hash;
+        public long SendStarted;
         public long Key => ((long)Item.File << 32) | (uint)Item.Chunk;
     }
 
@@ -72,10 +76,35 @@ public sealed class SenderSession : IPausable
         }
     }
 
-    sealed class StreamCtx
+    sealed class StreamCtx : IDisposable
     {
         public int Acked;
         public readonly CompressionGate Gate = new();
+        SafeFileHandle? _sourceHandle;
+        int _sourceFile = -1;
+
+        public SafeFileHandle SourceHandle(int file, string path)
+        {
+            if (_sourceFile != file)
+            {
+                _sourceHandle?.Dispose();
+                _sourceHandle = null;
+                _sourceFile = -1;
+                var handle = File.OpenHandle(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    FileOptions.Asynchronous
+                );
+                _sourceHandle = handle;
+                _sourceFile = file;
+            }
+            return _sourceHandle
+                ?? throw new InvalidOperationException("Source handle was not initialized.");
+        }
+
+        public void Dispose() => _sourceHandle?.Dispose();
     }
 
     readonly IPEndPoint _remote;
@@ -87,20 +116,49 @@ public sealed class SenderSession : IPausable
 
     readonly PauseGate _gate = new();
     readonly SemaphoreSlim _controlWrite = new(1, 1);
-    volatile NetworkStream? _control;
+    volatile Stream? _control;
+
+    readonly SecurityContext _security;
+    int _compressionProbeTaken;
+    long _uncompressedAckBytes,
+        _uncompressedAckTicks;
+    int _uncompressedAckFrames;
+    string _peerFp = "";
 
     public TransferState State { get; }
+
+    string Tag => _id.ToString("N")[..6];
+
+    void RecordUncompressedAck(int bytes, long ticks)
+    {
+        Interlocked.Add(ref _uncompressedAckBytes, bytes);
+        Interlocked.Add(ref _uncompressedAckTicks, ticks);
+        Interlocked.Increment(ref _uncompressedAckFrames);
+    }
+
+    bool CompressionPays(int bytesSaved, long compressionTicks)
+    {
+        long sent = Interlocked.Read(ref _uncompressedAckBytes);
+        long elapsed = Interlocked.Read(ref _uncompressedAckTicks);
+        if (sent == 0 || elapsed == 0 || Volatile.Read(ref _uncompressedAckFrames) < 2)
+            return true;
+        double savedSendTicks = (double)bytesSaved * elapsed / sent;
+        return compressionTicks <= savedSendTicks * 0.25;
+    }
 
     public SenderSession(
         IPEndPoint remote,
         string senderName,
         IEnumerable<(string Full, string Rel)> files,
-        SendOptions? options = null
+        SendOptions? options
     )
     {
         _remote = remote;
         _senderName = senderName;
-        _options = options ?? new SendOptions();
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _security =
+            options.Security
+            ?? throw new ArgumentException("SendOptions.Security is required.", nameof(options));
         _files = files.ToArray();
         if (_files.Length == 0)
             throw new ArgumentException("No files to send.");
@@ -128,6 +186,9 @@ public sealed class SenderSession : IPausable
     /// <summary>Never throws; outcome is reflected in <see cref="State"/>.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        DiagLog.Info(
+            $"[send {Tag}] start: {_files.Length} files, {Format.Bytes(State.TotalBytes)} to {_remote.Address}"
+        );
         try
         {
             await RunCoreAsync(ct);
@@ -142,10 +203,21 @@ public sealed class SenderSession : IPausable
             State.Error = e.Message;
             State.Phase = e.Decision == Decision.Decline ? Phase.Declined : Phase.Failed;
         }
+        catch (PairingRejectedException e)
+        {
+            State.Error = e.Message;
+            State.Phase = Phase.Declined;
+        }
         catch (Exception e)
         {
             State.Error = e.Message;
             State.Phase = Phase.Failed;
+        }
+        finally
+        {
+            DiagLog.Info(
+                $"[send {Tag}] ended: {State.Phase}{(string.IsNullOrEmpty(State.Error) ? "" : " — " + State.Error)}, retries {State.Retries}"
+            );
         }
     }
 
@@ -191,14 +263,28 @@ public sealed class SenderSession : IPausable
     {
         int chunk = Protocol.ChunkSize;
         State.Phase = Phase.Connecting;
-        var (sock, cs) = await ConnectAsync(_remote, ct);
+        var (sock, cs, peerFp) = await ConnectSecureAsync(ct);
         using var csGuard = cs;
-        _control = cs;
+        _peerFp = peerFp;
         State.LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint);
+
+        State.LinkName = NetInfo.DescribeLink(sock.LocalEndPoint);
+        DiagLog.Info($"[send {Tag}] connected via {State.LinkName}");
 
         int initialStreams =
             _options.Streams > 0 ? Math.Clamp(_options.Streams, 1, 32) : InitialAutoStreams;
         await Wire.WriteHandshakeAsync(cs, Protocol.KindSession, ct);
+        await SecurityHandshake.RunAsync(
+            cs,
+            _security,
+            _senderName,
+            _security.Identity.Fingerprint,
+            peerFp,
+            _remote.Address.ToString(),
+            pairing => State.Phase = pairing ? Phase.Pairing : Phase.Connecting,
+            ct
+        );
+        _control = cs;
         var offer = new Offer(_id, _senderName, initialStreams, chunk, _entries);
         await Wire.WriteFrameAsync(cs, w => Wire.WriteOffer(w, offer), ct);
 
@@ -218,6 +304,10 @@ public sealed class SenderSession : IPausable
                     throw new InvalidDataException("Bad resume map.");
             }
         }
+
+        DiagLog.Info(
+            $"[send {Tag}] accepted; streams={(_options.Streams > 0 ? _options.Streams.ToString() : "auto")} compress={_options.Compress}"
+        );
 
         // ---- build the work queue: big files -> chunks, small files -> packed bundles ----
         var queue = Channel.CreateUnbounded<WorkItem>(
@@ -365,7 +455,7 @@ public sealed class SenderSession : IPausable
             }
         }
 
-        async Task RunPipelineAsync(NetworkStream ns, StreamCtx ctx, CancellationToken outer)
+        async Task RunPipelineAsync(Stream ns, StreamCtx ctx, CancellationToken outer)
         {
             using var pcts = CancellationTokenSource.CreateLinkedTokenSource(outer);
             var pt = pcts.Token;
@@ -398,7 +488,7 @@ public sealed class SenderSession : IPausable
                         await _gate.WaitAsync(pt);
                         var p = new Prepared { Item = item };
                         owned[p.Key] = p;
-                        await LoadAsync(p, bundles, ctx.Gate, pt);
+                        await LoadAsync(p, bundles, ctx, pt);
                         await prepared.Writer.WriteAsync(p, pt);
                     }
                     prepared.Writer.TryComplete();
@@ -419,6 +509,7 @@ public sealed class SenderSession : IPausable
                     await foreach (var p in prepared.Reader.ReadAllAsync(pt))
                     {
                         await _gate.WaitAsync(pt);
+                        p.SendStarted = Stopwatch.GetTimestamp();
                         if (_options.Limiter is { } lim)
                             await lim.WaitAsync(p.WireLen, pt);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr, p.Item.File);
@@ -426,8 +517,13 @@ public sealed class SenderSession : IPausable
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(8), p.RawLen);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(12), p.WireLen);
                         BinaryPrimitives.WriteUInt64LittleEndian(hdr.AsSpan(16), p.Hash);
-                        await ns.WriteAsync(hdr, pt);
-                        await ns.WriteAsync(p.Data.AsMemory(0, p.WireLen), pt);
+                        hdr.CopyTo(p.Data, 0);
+                        long ts = Stopwatch.GetTimestamp();
+                        await ns.WriteAsync(
+                            p.Data.AsMemory(0, Protocol.DataHeaderSize + p.WireLen),
+                            pt
+                        );
+                        State.AddStage(Stage.Send, ts);
                         await inflight.Writer.WriteAsync(p, pt);
                     }
                     inflight.Writer.TryComplete();
@@ -448,6 +544,7 @@ public sealed class SenderSession : IPausable
                 {
                     await foreach (var p in inflight.Reader.ReadAllAsync(pt))
                     {
+                        long ta = Stopwatch.GetTimestamp();
                         using (var tcts = CancellationTokenSource.CreateLinkedTokenSource(pt))
                         {
                             tcts.CancelAfter(TimeSpan.FromSeconds(AckTimeoutSeconds));
@@ -460,6 +557,14 @@ public sealed class SenderSession : IPausable
                                 throw new IOException("Receiver stopped acknowledging (stalled).");
                             }
                         }
+
+                        long ackTicks = Stopwatch.GetTimestamp() - ta;
+                        if (p.WireLen == p.RawLen)
+                            RecordUncompressedAck(
+                                p.RawLen,
+                                Stopwatch.GetTimestamp() - p.SendStarted
+                            );
+                        State.AddStage(Stage.AckWait, ta);
                         owned.TryRemove(p.Key, out _);
                         if (ack[0] == Protocol.AckOk)
                         {
@@ -469,6 +574,7 @@ public sealed class SenderSession : IPausable
                         }
                         else
                         {
+                            DiagLog.Warn($"[send {Tag}] receiver rejected a chunk (checksum)");
                             State.Retry();
                             if (++badInRow > MaxConsecutiveFailures)
                                 throw new InvalidDataException("Repeated checksum failures.");
@@ -506,7 +612,7 @@ public sealed class SenderSession : IPausable
 
         async Task WorkerAsync()
         {
-            var ctx = new StreamCtx();
+            using var ctx = new StreamCtx();
             var token = lcts.Token;
             int failures = 0;
             try
@@ -515,7 +621,7 @@ public sealed class SenderSession : IPausable
                 {
                     token.ThrowIfCancellationRequested();
                     int ackedBefore = Volatile.Read(ref ctx.Acked);
-                    NetworkStream? ns = null;
+                    Stream? ns = null;
                     try
                     {
                         ns = await ConnectDataAsync(token);
@@ -531,6 +637,9 @@ public sealed class SenderSession : IPausable
                                     or ObjectDisposedException
                         )
                     {
+                        DiagLog.Warn(
+                            $"[send {Tag}] stream error: {ex.GetType().Name}: {ex.Message}"
+                        );
                         State.Retry();
                         if (Volatile.Read(ref ctx.Acked) > ackedBefore)
                             failures = 0;
@@ -602,6 +711,9 @@ public sealed class SenderSession : IPausable
                 {
                     StartWorker();
                     count++;
+                    DiagLog.Info(
+                        $"[send {Tag}] auto-tune: now {count} streams (was {Format.Rate(prev)})"
+                    );
                     if (!await SleepAsync(1000, token))
                         return;
                     double now = await MeasureAsync(2000, token);
@@ -631,81 +743,106 @@ public sealed class SenderSession : IPausable
     }
 
     /// <summary>Reads a chunk (or packs a bundle of small files) into a pooled buffer, hashes it, optionally LZ4-compresses it.</summary>
-    async Task LoadAsync(Prepared p, int[][] bundles, CompressionGate gate, CancellationToken ct)
+    async Task LoadAsync(Prepared p, int[][] bundles, StreamCtx ctx, CancellationToken ct)
     {
         int chunk = Protocol.ChunkSize;
-        var raw = ArrayPool<byte>.Shared.Rent(chunk);
+        var raw = ArrayPool<byte>.Shared.Rent(chunk + Protocol.DataHeaderSize);
         p.Data = raw;
+        int dataOffset = Protocol.DataHeaderSize;
+        long t0 = Stopwatch.GetTimestamp();
         int len;
 
         if (p.Item.File >= 0)
         {
             var entry = _entries[p.Item.File];
             len = ChunkMath.Length(entry.Size, chunk, p.Item.Chunk);
-            using var h = File.OpenHandle(
-                _files[p.Item.File].Full,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete,
-                FileOptions.Asynchronous
+            var h = ctx.SourceHandle(p.Item.File, _files[p.Item.File].Full);
+            await ReadFullyAsync(
+                h,
+                raw.AsMemory(dataOffset, len),
+                (long)p.Item.Chunk * chunk,
+                ct
             );
-            await ReadFullyAsync(h, raw.AsMemory(0, len), (long)p.Item.Chunk * chunk, ct);
         }
         else
         {
             var idxs = bundles[p.Item.Chunk];
-            int pos = 4 + 8 * idxs.Length;
-            BinaryPrimitives.WriteInt32LittleEndian(raw, idxs.Length);
+            int pos = dataOffset + 4 + 8 * idxs.Length;
+            BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(dataOffset), idxs.Length);
             for (int k = 0; k < idxs.Length; k++)
             {
                 var entry = _entries[idxs[k]];
-                BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(4 + 8 * k), idxs[k]);
-                BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(8 + 8 * k), (int)entry.Size);
-                using var h = File.OpenHandle(
-                    _files[idxs[k]].Full,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete,
-                    FileOptions.Asynchronous
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    raw.AsSpan(dataOffset + 4 + 8 * k),
+                    idxs[k]
                 );
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    raw.AsSpan(dataOffset + 8 + 8 * k),
+                    (int)entry.Size
+                );
+                var h = ctx.SourceHandle(idxs[k], _files[idxs[k]].Full);
                 await ReadFullyAsync(h, raw.AsMemory(pos, (int)entry.Size), 0, ct);
                 pos += (int)entry.Size;
             }
-            len = pos;
+            len = pos - dataOffset;
         }
 
+        State.AddStage(Stage.SourceRead, t0);
         p.RawLen = len;
         p.WireLen = len;
-        p.Hash = XxHash3.HashToUInt64(raw.AsSpan(0, len));
+        long th = Stopwatch.GetTimestamp();
+        p.Hash = XxHash3.HashToUInt64(raw.AsSpan(dataOffset, len));
+        State.AddStage(Stage.Hash, th);
 
-        if (_options.Compress && len >= 4096 && gate.ShouldTry())
+        if (_options.Compress && len >= 4096 && ctx.Gate.ShouldTry())
         {
-            var c = ArrayPool<byte>.Shared.Rent(chunk);
+            if (Interlocked.CompareExchange(ref _compressionProbeTaken, 1, 0) == 0)
+                return;
+
+            long tc = Stopwatch.GetTimestamp();
+            var c = ArrayPool<byte>.Shared.Rent(chunk + Protocol.DataHeaderSize);
             int limit = len - len / 10; // only worth it if we save >= 10%
-            int n = LZ4Codec.Encode(raw.AsSpan(0, len), c.AsSpan(0, limit));
-            if (n > 0 && n < len)
+            int n = LZ4Codec.Encode(
+                raw.AsSpan(dataOffset, len),
+                c.AsSpan(dataOffset, limit)
+            );
+            long compressionTicks = Stopwatch.GetTimestamp() - tc;
+            State.AddStage(Stage.Compress, tc);
+            if (n > 0 && n < len && CompressionPays(len - n, compressionTicks))
             {
                 ArrayPool<byte>.Shared.Return(raw);
                 p.Data = c;
                 p.WireLen = n;
-                gate.Report(true);
+                ctx.Gate.Report(true);
             }
             else
             {
                 ArrayPool<byte>.Shared.Return(c);
-                gate.Report(false);
+                ctx.Gate.Report(false);
             }
         }
     }
 
-    async Task<NetworkStream> ConnectDataAsync(CancellationToken ct)
+    /// <summary>TCP + mutual TLS. The peer's fingerprint is returned for the trust check.</summary>
+    async Task<(Socket Socket, SslStream Stream, string PeerFp)> ConnectSecureAsync(
+        CancellationToken ct
+    )
     {
-        var (_, ns) = await ConnectAsync(_remote, ct);
+        var (sock, ns) = await ConnectTcpAsync(_remote, ct);
         try
         {
-            await Wire.WriteHandshakeAsync(ns, Protocol.KindData, ct);
-            await ns.WriteAsync(_id.ToByteArray(), ct);
-            return ns;
+            using var hs = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            hs.CancelAfter(TimeSpan.FromSeconds(10));
+            SslStream ssl;
+            try
+            {
+                ssl = await Tls.AsClientAsync(ns, _security.Identity, hs.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new IOException("Secure handshake timed out.");
+            }
+            return (sock, ssl, Tls.PeerFingerprint(ssl));
         }
         catch
         {
@@ -714,7 +851,28 @@ public sealed class SenderSession : IPausable
         }
     }
 
-    static async Task<(Socket Socket, NetworkStream Stream)> ConnectAsync(
+    async Task<Stream> ConnectDataAsync(CancellationToken ct)
+    {
+        var (_, ssl, fp) = await ConnectSecureAsync(ct);
+        try
+        {
+            // every data connection must end at the same device the control connection was paired with
+            if (fp != _peerFp)
+                throw new AuthenticationException(
+                    "The receiver's identity changed during the transfer."
+                );
+            await Wire.WriteHandshakeAsync(ssl, Protocol.KindData, ct);
+            await ssl.WriteAsync(_id.ToByteArray(), ct);
+            return ssl;
+        }
+        catch
+        {
+            ssl.Dispose();
+            throw;
+        }
+    }
+
+    static async Task<(Socket Socket, Stream Stream)> ConnectTcpAsync(
         IPEndPoint ep,
         CancellationToken ct
     )

@@ -6,7 +6,7 @@
     xmlns:views="using:LanShare.Views"
     xmlns:vm="using:LanShare.ViewModels"
     Title="LanShare"
-    Width="1120"
+    Width="1180"
     Height="660"
     x:DataType="vm:MainViewModel"
     Background="#0E1014"
@@ -55,6 +55,14 @@
                                     VerticalAlignment="Center"
                                     Classes="muted"
                                     Text="LAN file transfer" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Classes="muted"
+                                    Text=" | " />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Classes="muted"
+                                    Text="{Binding BuildStamp}" />
                             </StackPanel>
                         </Border>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">

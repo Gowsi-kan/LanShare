@@ -1,8 +1,12 @@
 ﻿using System.Collections.ObjectModel;
+using System.Security.Cryptography.X509Certificates;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LanShare.Core;
+using LanShare.Services;
+using LanShare.Views;
 using LanShare.Web;
 using QRCoder;
 
@@ -46,13 +50,34 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     string? _selectedAddress;
 
+    [ObservableProperty]
+    string _pin = "";
+
+    [ObservableProperty]
+    bool _askApproval = true;
+
+    [ObservableProperty]
+    bool _useHttps;
+
     public string ToggleText => IsRunning ? "Stop phone access" : "Start phone access";
     public bool HasMultipleAddresses => Addresses.Count > 1;
 
-    public PhoneAccessViewModel(Func<string> downloadDir, string deviceName)
+    readonly X509Certificate2 _cert;
+    readonly Notifier _notifier;
+
+    public PhoneAccessViewModel(
+        Func<string> downloadDir,
+        string deviceName,
+        X509Certificate2 cert,
+        Notifier notifier
+    )
     {
+        _cert = cert;
+        _notifier = notifier;
         _server = new WebShareServer(deviceName, downloadDir);
         _server.UploadStarted += up => UploadStarted?.Invoke(up);
+        _server.PinChanged += pin => Dispatcher.UIThread.Post(() => Pin = pin);
+        _server.ApproveUploads = ApproveAsync;
     }
 
     partial void OnSelectedAddressChanged(string? value) => BuildUrl();
@@ -72,10 +97,12 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
                 BuildUrl();
                 FirewallText = "";
                 Status = "Phone access is off.";
+                Pin = "";
             }
             else
             {
-                await _server.StartAsync();
+                await _server.StartAsync(WebShareServer.DefaultPort, UseHttps ? _cert : null);
+                Pin = _server.Pin;
                 Addresses.Clear();
                 foreach (var a in LanAddress.Candidates())
                     Addresses.Add(a);
@@ -109,6 +136,39 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
         FirewallText = r.Message;
     }
 
+    [RelayCommand]
+    void NewPin()
+    {
+        if (IsRunning)
+            _server.RotatePin(); // everyone has to log in again
+    }
+
+    async Task<bool> ApproveAsync(UploadRequest req, CancellationToken ct)
+    {
+        if (!AskApproval)
+            return true;
+        _notifier.Show(
+            "Phone wants to send files",
+            $"{req.Device} ({req.Peer}): {req.Files.Count} file(s)"
+        );
+        long total = req.Files.Sum(f => f.Size);
+        var lines = req.Files.Take(50).Select(f => $"{f.Name} · {Format.Bytes(f.Size)}").ToList();
+        if (req.Files.Count > 50)
+            lines.Add($"… and {req.Files.Count - 50} more");
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            PromptWindow.ShowAsync(
+                "Phone upload request",
+                $"{req.Device} ({req.Peer}) wants to send {req.Files.Count} file(s), {Format.Bytes(total)}",
+                "Only accept if this is your phone.",
+                null,
+                "Accept",
+                "Decline",
+                ct,
+                lines
+            )
+        );
+    }
+
     public void AddShared(IEnumerable<string> paths)
     {
         foreach (var p in paths)
@@ -139,7 +199,8 @@ public sealed partial class PhoneAccessViewModel : ObservableObject, IDisposable
         }
         else
         {
-            Url = $"http://{SelectedAddress}:{_server.Port}/?t={_server.Token}";
+            Url =
+                $"{(_server.UseHttps ? "https" : "http")}://{SelectedAddress}:{_server.Port}/?t={_server.Token}";
             Qr = MakeQr(Url);
         }
         old?.Dispose();

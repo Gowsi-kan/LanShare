@@ -50,7 +50,7 @@
                 ColumnSpacing="12">
 
                 <!--  Left: start/stop, QR  -->
-                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
                     <TextBlock
                         Classes="muted"
                         Text="Open the address on a phone browser on the same Wi-Fi. Nothing to install on the phone."
@@ -76,16 +76,34 @@
                         Classes="card"
                         IsVisible="{Binding IsRunning}">
                         <StackPanel Spacing="8">
-                            <Border
-                                Padding="8"
-                                HorizontalAlignment="Center"
-                                Background="White"
-                                CornerRadius="8">
-                                <Image
-                                    Width="170"
-                                    Height="170"
-                                    Source="{Binding Qr}" />
-                            </Border>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                <Border
+                                    Padding="6"
+                                    Background="White"
+                                    CornerRadius="8">
+                                    <Image
+                                        Width="140"
+                                        Height="140"
+                                        Source="{Binding Qr}" />
+                                </Border>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="4">
+                                    <TextBlock Classes="lbl" Text="PIN FOR THE PHONE" />
+                                    <TextBlock
+                                        FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
+                                        FontSize="30"
+                                        FontWeight="Bold"
+                                        Foreground="#4C8DFF"
+                                        Text="{Binding Pin}" />
+                                    <Button
+                                        HorizontalAlignment="Left"
+                                        Classes="ghost small"
+                                        Command="{Binding NewPinCommand}"
+                                        Content="New PIN" />
+                                </StackPanel>
+                            </Grid>
                             <TextBox
                                 FontSize="12"
                                 IsReadOnly="True"
@@ -107,7 +125,7 @@
                                     Content="Allow through firewall" />
                             </StackPanel>
                             <TextBlock
-                                MaxHeight="48"
+                                MaxHeight="32"
                                 Classes="muted"
                                 Text="{Binding FirewallText}"
                                 TextTrimming="CharacterEllipsis"
@@ -116,10 +134,18 @@
                         </StackPanel>
                     </Border>
 
+                    <StackPanel Grid.Row="3" Spacing="2">
+                        <CheckBox Content="Ask me before accepting phone uploads" IsChecked="{Binding AskApproval}" />
+                        <CheckBox
+                            Content="Use HTTPS (phone shows a certificate warning once)"
+                            IsChecked="{Binding UseHttps}"
+                            IsEnabled="{Binding !IsRunning}" />
+                    </StackPanel>
+
                     <TextBlock
-                        Grid.Row="4"
+                        Grid.Row="5"
                         Classes="muted"
-                        Text="Anyone on your network with this link can send files to this PC and download the files shared here. The link changes every time you start. Stop phone access when you are done."
+                        Text="The QR code alone is not enough: the phone also needs the PIN. Without HTTPS the traffic on your Wi-Fi is readable by others on it, so use HTTPS on shared networks."
                         TextWrapping="Wrap" />
                 </Grid>
 

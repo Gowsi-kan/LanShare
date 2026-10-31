@@ -19,4 +19,8 @@
 	  <ProjectReference Include="..\LanShare.Core\LanShare.Core.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="LanShare.Tests" />
+	</ItemGroup>
+
 </Project>

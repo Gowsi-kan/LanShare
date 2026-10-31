@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -102,6 +103,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ? $"Sending to {p.Name} ({p.Address})"
             : "Select a device on the left, then drop files";
 
+    readonly SecurityContext _security;
+    public ObservableCollection<TrustedDeviceItem> TrustedDevices { get; } = [];
+    public string OwnFingerprint => GroupFingerprint(_security.Identity.Fingerprint);
+
     public MainViewModel(AppSettings settings)
     {
         DeviceName = Environment.MachineName;
@@ -117,7 +122,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             "LanShare"
         );
 
-        _service = new TransferService(DeviceName);
+        var dataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "LanShare"
+        );
+        _security = new SecurityContext(
+            DeviceIdentity.LoadOrCreate(dataDir),
+            TrustStore.Load(Path.Combine(dataDir, "trusted.json"))
+        )
+        {
+            PairingUi = new UiPrompts(Notifier),
+        };
+        _security.Trust.Changed += () => Dispatcher.UIThread.Post(RefreshTrusted);
+        RefreshTrusted();
+
+        _service = new TransferService(DeviceName, _security);
         _service.IncomingOffer += OnIncoming;
         _service.Start();
 
@@ -126,7 +145,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Dispatcher.UIThread.Post(() => SyncPeers(_discovery.Snapshot));
         _discovery.Start();
 
-        Phone = new PhoneAccessViewModel(() => DownloadDir, DeviceName);
+        Phone = new PhoneAccessViewModel(
+            () => DownloadDir,
+            DeviceName,
+            _security.Identity.Certificate,
+            Notifier
+        );
         Phone.UploadStarted += up =>
             Dispatcher.UIThread.Post(() =>
             {
@@ -311,7 +335,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // The SenderSession constructor stats every file; with big folders / network shares that must not run on the UI thread.
     internal async Task StartSendAsync(SendPlan plan)
     {
-        var opts = new SendOptions((int)Math.Round(StreamsSetting), CompressionEnabled, _limiter);
+        var opts = new SendOptions(
+            (int)Math.Round(StreamsSetting),
+            CompressionEnabled,
+            _limiter,
+            _security
+        );
         StatusMessage = "Preparing transfer…";
         try
         {
@@ -480,6 +509,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     void OnTransferFinished(TransferViewModel t)
     {
+        DiagLog.Info("Transfer finished: " + t.Report().Replace(Environment.NewLine, " | "));
         if (IsWindowActive())
             return; // the user is looking at the window
         switch (t.FinalPhase)
@@ -542,6 +572,73 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             : $"LanShare — {active} active · {Format.Rate(speed)}";
     }
 
+    void RefreshTrusted()
+    {
+        TrustedDevices.Clear();
+        foreach (
+            var d in _security.Trust.Items.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+        )
+            TrustedDevices.Add(new TrustedDeviceItem(d, fp => _security.Trust.Remove(fp)));
+    }
+
+    public static string GroupFingerprint(string fp, int chars = 32)
+    {
+        var s = fp.Length > chars ? fp[..chars] : fp;
+        return string.Join(
+            ' ',
+            Enumerable.Range(0, s.Length / 4).Select(i => s.Substring(i * 4, 4))
+        );
+    }
+
+    public async Task<string> BuildDiagnosticsAsync()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(await SystemInfo.DescribeAsync(DownloadDir));
+        sb.AppendLine();
+        sb.AppendLine("Settings:");
+        sb.AppendLine(
+            $"  streams={(StreamsSetting < 0.5 ? "auto" : ((int)Math.Round(StreamsSetting)).ToString())}"
+                + $" compression={CompressionEnabled} limit={BandwidthOptions[Math.Clamp(BandwidthIndex, 0, BandwidthOptions.Count - 1)]}"
+                + $" autoAccept={AutoAccept} tray={RunInBackground}"
+        );
+        sb.AppendLine(
+            $"  trusted devices: {TrustedDevices.Count} · discovered devices: {Peers.Count} · phone access: {(Phone.IsRunning ? "on" : "off")}"
+        );
+        sb.AppendLine();
+        sb.AppendLine("Transfers in the window (newest first, file names left out):");
+        foreach (var t in Transfers.Take(10))
+            sb.AppendLine(t.Report()).AppendLine();
+        sb.AppendLine("Recent log:");
+        sb.AppendLine(DiagLog.Recent(200));
+        return sb.ToString();
+    }
+
+    public string BuildStamp => BuildInfo.Stamp;
+
+    public string LogFolderText =>
+        DiagLog.LogDirectory is { } d
+            ? $"Logs: {d}"
+            : "Logging is unavailable: the log folder could not be created.";
+
+    public void OpenLogFolder()
+    {
+        try
+        {
+            var d = DiagLog.LogDirectory;
+            if (d is null)
+            {
+                StatusMessage = "Logging is unavailable: the log folder could not be created.";
+                return;
+            }
+            Directory.CreateDirectory(d);
+            Process.Start(new ProcessStartInfo(d) { UseShellExecute = true });
+        }
+        catch (Exception e)
+        {
+            StatusMessage = e.Message;
+        }
+    }
+
     public void Dispose()
     {
         _timer.Stop();
@@ -555,4 +652,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         catch { }
     }
+}
+
+public sealed class TrustedDeviceItem(TrustedDevice d, Action<string> forget)
+{
+    public string Name { get; } = d.Name;
+    public string Detail { get; } = $"{d.Address} · paired {d.AddedUtc.ToLocalTime():yyyy-MM-dd}";
+    public string Fingerprint { get; } = MainViewModel.GroupFingerprint(d.Fingerprint, 16);
+    public RelayCommand ForgetCommand { get; } = new(() => forget(d.Fingerprint));
 }

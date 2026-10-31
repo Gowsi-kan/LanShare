@@ -2,7 +2,9 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using LanShare.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
@@ -14,6 +16,10 @@ using Microsoft.Extensions.Logging;
 namespace LanShare.Web;
 
 public sealed record SharedFile(string Id, string Path, string Name, long Size);
+
+public sealed record UploadFile(string Name, long Size);
+
+public sealed record UploadRequest(string Peer, string Device, IReadOnlyList<UploadFile> Files);
 
 /// <summary>One browser transfer (upload from phone or download to phone). State is shown in the desktop UI.</summary>
 public sealed class WebUpload
@@ -73,7 +79,32 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
     public event Action<WebUpload>? UploadStarted;
 
     public IReadOnlyList<SharedFile> Shared =>
-        _shared.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        [.. _shared.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)];
+
+    sealed record SessionInfo(string Ip, DateTime Created);
+
+    sealed class Approval(string ip, UploadRequest request)
+    {
+        public string Ip { get; } = ip;
+        public UploadRequest Request { get; } = request;
+        public DateTime Created { get; } = DateTime.UtcNow;
+        public volatile int State; // 0 pending, 1 approved, 2 declined
+
+        public bool Allows(string name, long size) =>
+            Request.Files.Any(f => f.Name == name && f.Size == size);
+    }
+
+    readonly ConcurrentDictionary<string, SessionInfo> _sessions = new();
+    readonly ConcurrentDictionary<string, Approval> _approvals = new();
+    readonly ConcurrentDictionary<string, (int Fails, DateTime LockedUntil)> _failures = new();
+    int _totalFailures;
+
+    public string Pin { get; private set; } = NewPin();
+    public bool UseHttps { get; private set; }
+    public event Action<string>? PinChanged;
+
+    /// <summary>Asked once per upload batch. null = approve automatically.</summary>
+    public Func<UploadRequest, CancellationToken, Task<bool>>? ApproveUploads { get; set; }
 
     // ------------------------------------------------------------ shared files (PC -> phone)
 
@@ -91,22 +122,65 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
     // ------------------------------------------------------------ lifecycle
 
-    public async Task StartAsync(int port = DefaultPort)
+    public async Task StartAsync(int port = DefaultPort, X509Certificate2? httpsCert = null)
     {
         if (_app is not null)
             return;
         Token = NewToken();
+        Pin = NewPin();
+        UseHttps = httpsCert is not null;
+        _sessions.Clear();
+        _approvals.Clear();
+        _failures.Clear();
+        Interlocked.Exchange(ref _totalFailures, 0);
         _indexHtml = LoadIndex();
         try
         {
-            _app = await BuildAndStartAsync(port);
+            _app = await BuildAndStartAsync(port, httpsCert);
             Port = port;
         }
         catch (Exception e) when (e is IOException or InvalidOperationException or SocketException)
         {
             int free = FreePort(); // default port busy
-            _app = await BuildAndStartAsync(free);
+            _app = await BuildAndStartAsync(free, httpsCert);
             Port = free;
+        }
+
+        DiagLog.Info($"Phone access started: port {Port}, https={UseHttps}");
+    }
+
+    async Task<WebApplication> BuildAndStartAsync(int port, X509Certificate2? cert)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(o =>
+        {
+            o.AddServerHeader = false;
+            o.Limits.MaxRequestBodySize = null;
+            o.Limits.MinRequestBodyDataRate = null;
+            o.Limits.MinResponseDataRate = null;
+            o.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+            o.ListenAnyIP(
+                port,
+                lo =>
+                {
+                    if (cert is not null)
+                        lo.UseHttps(cert);
+                }
+            );
+        });
+
+        var app = builder.Build();
+        Map(app);
+        try
+        {
+            await app.StartAsync();
+            return app;
+        }
+        catch
+        {
+            await app.DisposeAsync();
+            throw;
         }
     }
 
@@ -114,6 +188,10 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
     {
         var app = _app;
         _app = null;
+        DiagLog.Info("Phone access stopped");
+
+        _sessions.Clear();
+        _approvals.Clear();
 
         List<WebUpload> all;
         lock (_slotsGate)
@@ -191,11 +269,18 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
                 if (ctx.Request.Path.StartsWithSegments("/api"))
                 {
-                    var t =
-                        ctx.Request.Headers["X-Token"].FirstOrDefault()
-                        ?? ctx.Request.Query["t"].FirstOrDefault()
-                        ?? "";
-                    if (!TokenOk(t))
+                    bool ok;
+                    if (ctx.Request.Path.Equals("/api/login"))
+                        ok = TokenOk(ctx.Request.Headers["X-Token"].FirstOrDefault() ?? ""); // the QR link only opens the login
+                    else
+                    {
+                        var s =
+                            ctx.Request.Headers["X-Session"].FirstOrDefault()
+                            ?? ctx.Request.Query["s"].FirstOrDefault()
+                            ?? "";
+                        ok = SessionOk(s, ClientIp(ctx));
+                    }
+                    if (!ok)
                     {
                         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         return;
@@ -229,6 +314,107 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             }
         );
 
+        app.MapPost(
+            "/api/login",
+            async (HttpContext ctx) =>
+            {
+                var ip = ClientIp(ctx);
+                if (IsLocked(ip, out var wait))
+                    return Results.Json(
+                        new { error = $"Too many attempts. Try again in {wait} s." },
+                        statusCode: StatusCodes.Status429TooManyRequests
+                    );
+                if (ctx.Request.ContentLength is null or > 1024)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                string pin;
+                try
+                {
+                    using var doc = await JsonDocument.ParseAsync(
+                        ctx.Request.Body,
+                        cancellationToken: ctx.RequestAborted
+                    );
+                    pin = doc.RootElement.GetProperty("pin").GetString() ?? "";
+                }
+                catch
+                {
+                    return Results.BadRequest(new { error = "bad request" });
+                }
+
+                if (!PinOk(pin))
+                {
+                    DiagLog.Warn($"Phone login: wrong PIN from {ip}");
+                    RegisterFailure(ip);
+                    return Results.Json(
+                        new { error = "Wrong PIN" },
+                        statusCode: StatusCodes.Status401Unauthorized
+                    );
+                }
+                _failures.TryRemove(ip, out _);
+                DiagLog.Info($"Phone login OK from {ip}");
+                var session = NewToken();
+                _sessions[session] = new SessionInfo(ip, DateTime.UtcNow);
+                return Results.Json(new { session });
+            }
+        );
+
+        app.MapPost(
+            "/api/upload/request",
+            async (HttpContext ctx) =>
+            {
+                var ip = ClientIp(ctx);
+                if (ctx.Request.ContentLength is null or > 262_144)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                var files = new List<UploadFile>();
+                try
+                {
+                    using var doc = await JsonDocument.ParseAsync(
+                        ctx.Request.Body,
+                        cancellationToken: ctx.RequestAborted
+                    );
+                    foreach (
+                        var f in doc.RootElement.GetProperty("files").EnumerateArray().Take(500)
+                    )
+                    {
+                        var name = SafeName(f.GetProperty("name").GetString());
+                        long size = f.GetProperty("size").GetInt64();
+                        if (name is null || size < 0)
+                            return Results.BadRequest(new { error = "bad file entry" });
+                        files.Add(new UploadFile(name, size));
+                    }
+                }
+                catch
+                {
+                    return Results.BadRequest(new { error = "bad request" });
+                }
+                if (files.Count == 0)
+                    return Results.BadRequest(new { error = "no files" });
+
+                var ap = new Approval(
+                    ip,
+                    new UploadRequest(
+                        ip,
+                        DeviceHint(ctx.Request.Headers.UserAgent.ToString()),
+                        files
+                    )
+                );
+                var id = NewToken();
+                _approvals[id] = ap;
+                PruneApprovals();
+                _ = DecideAsync(ap);
+                return Results.Json(new { id, state = StateName(ap.State) });
+            }
+        );
+
+        app.MapGet(
+            "/api/upload/request/{id}",
+            (HttpContext ctx, string id) =>
+                _approvals.TryGetValue(id, out var ap) && ap.Ip == ClientIp(ctx)
+                    ? Results.Json(new { state = StateName(ap.State) })
+                    : Results.NotFound()
+        );
+
         app.MapMethods(
             "/api/files/{id}",
             new[] { "GET", "HEAD" },
@@ -248,7 +434,10 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             }
         );
 
-        app.MapPut("/api/upload", (HttpContext ctx) => UploadAsync(ctx));
+        app.MapPut(
+            "/api/upload",
+            (Delegate)((HttpContext ctx) => UploadAsync(ctx))
+        );
 
         app.MapDelete(
             "/api/upload",
@@ -371,7 +560,12 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                 }
             }
             if (state is not null && pos >= size)
+            {
                 state.Phase = Phase.Completed;
+                DiagLog.Info(
+                    $"Phone download finished: {Format.Bytes(size)} to {ctx.Connection.RemoteIpAddress}"
+                );
+            }
         }
         catch (Exception e)
             when (e
@@ -489,6 +683,18 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             return Results.BadRequest(new { error = "bad parameters" });
         var q = parsed.Value;
 
+        var rid = ctx.Request.Query["rid"].ToString();
+        if (
+            !_approvals.TryGetValue(rid, out var approval)
+            || approval.Ip != ClientIp(ctx)
+            || approval.State != 1
+            || !approval.Allows(q.Name, q.Size)
+        )
+            return Results.Json(
+                new { error = "This upload was not approved on the PC." },
+                statusCode: StatusCodes.Status403Forbidden
+            );
+
         var dir = downloadDir();
         Directory.CreateDirectory(dir);
         var peer = ctx.Connection.RemoteIpAddress is { } ip ? ip.MapToIPv4OrSelf() : "?";
@@ -569,6 +775,9 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                         received += seg.Length;
                         state.AddBytes(seg.Length);
                         state.CurrentFile = q.Name;
+                        DiagLog.Info(
+                            $"Phone upload finished: {Format.Bytes(q.Size)} from {slot.Upload.Peer}"
+                        );
                     }
                     reader.AdvanceTo(buf.End);
                     if (r.IsCompleted)
@@ -588,6 +797,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             File.Move(slot.Part, finalPath);
             state.CurrentFile = Path.GetFileName(finalPath);
             state.Phase = Phase.Completed;
+            DiagLog.Info($"Phone upload finished: {Format.Bytes(q.Size)} from {slot.Upload.Peer}");
             lock (_slotsGate)
                 _slots.Remove(q.Key);
             return Results.Json(new { done = true, name = Path.GetFileName(finalPath) });
@@ -673,6 +883,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
     void Fail(string key, UploadSlot slot, string message)
     {
+        DiagLog.Warn($"Phone upload failed: {message}");
         slot.Upload.State.Error = message;
         slot.Upload.State.Phase = Phase.Failed;
         lock (_slotsGate)
@@ -704,7 +915,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             $"{q.Name}.{Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(q.Key)))[..10]}.lfsweb"
         );
 
-    static string? SafeName(string? raw)
+    internal static string? SafeName(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return null;
@@ -796,6 +1007,99 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
         using var r = new StreamReader(s, Encoding.UTF8);
         return r.ReadToEnd().Replace("{{DEVICE}}", WebUtility.HtmlEncode(deviceName));
     }
+
+    public void RotatePin()
+    {
+        Pin = NewPin();
+        _sessions.Clear();
+        _failures.Clear();
+        Interlocked.Exchange(ref _totalFailures, 0);
+        PinChanged?.Invoke(Pin);
+    }
+
+    static string NewPin() => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+
+    bool PinOk(string pin)
+    {
+        var a = Encoding.ASCII.GetBytes(pin);
+        var b = Encoding.ASCII.GetBytes(Pin);
+        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
+    }
+
+    bool SessionOk(string s, string ip) =>
+        s.Length > 0 && _sessions.TryGetValue(s, out var info) && info.Ip == ip;
+
+    bool IsLocked(string ip, out int secondsLeft)
+    {
+        secondsLeft = 0;
+        if (_failures.TryGetValue(ip, out var f) && f.LockedUntil > DateTime.UtcNow)
+        {
+            secondsLeft = (int)Math.Ceiling((f.LockedUntil - DateTime.UtcNow).TotalSeconds);
+            return true;
+        }
+        return false;
+    }
+
+    void RegisterFailure(string ip)
+    {
+        // 5 wrong PINs from one address = 5 minute lock; 20 in total = new PIN (somebody is guessing)
+        _failures.AddOrUpdate(
+            ip,
+            _ => (1, DateTime.MinValue),
+            (_, f) =>
+                f.Fails + 1 >= 5 ? (0, DateTime.UtcNow.AddMinutes(5)) : (f.Fails + 1, f.LockedUntil)
+        );
+        if (Interlocked.Increment(ref _totalFailures) >= 20)
+            RotatePin();
+    }
+
+    async Task DecideAsync(Approval ap)
+    {
+        bool ok;
+        var ask = ApproveUploads;
+        if (ask is null)
+            ok = true;
+        else
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            try
+            {
+                ok = await ask(ap.Request, cts.Token);
+            }
+            catch
+            {
+                ok = false;
+            }
+        }
+        ap.State = ok ? 1 : 2;
+        DiagLog.Info(
+            $"Phone upload request from {ap.Ip}: {(ok ? "approved" : "declined")} ({ap.Request.Files.Count} files)"
+        );
+    }
+
+    void PruneApprovals()
+    {
+        foreach (var (id, ap) in _approvals)
+            if (DateTime.UtcNow - ap.Created > TimeSpan.FromHours(12))
+                _approvals.TryRemove(id, out _);
+    }
+
+    static string StateName(int s) =>
+        s switch
+        {
+            1 => "approved",
+            2 => "declined",
+            _ => "pending",
+        };
+
+    static string ClientIp(HttpContext ctx) =>
+        ctx.Connection.RemoteIpAddress is { } ip ? ip.MapToIPv4OrSelf() : "?";
+
+    static string DeviceHint(string ua) =>
+        ua.Contains("iPhone") ? "iPhone"
+        : ua.Contains("iPad") ? "iPad"
+        : ua.Contains("Android") ? "Android phone"
+        : "Browser";
 }
 
 static class IpExtensions
