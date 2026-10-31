@@ -349,54 +349,307 @@
                             </Grid>
                         </Border>
 
-                        <TextBlock
+                        <Border
                             Grid.Row="2"
-                            FontSize="15"
-                            FontWeight="SemiBold"
-                            Text="Transfer activity" />
-
-                        <Grid Grid.Row="3">
-                            <ScrollViewer Padding="0,0,12,0" IsVisible="{Binding HasTransfers}">
-                                <ItemsControl ItemsSource="{Binding Transfers}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:TransferViewModel">
-                                            <views:TransferCardView />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                            <StackPanel
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding !HasTransfers}"
-                                Spacing="8">
-                                <Border
-                                    Width="44"
-                                    Height="44"
-                                    HorizontalAlignment="Center"
-                                    Background="#17243A"
-                                    CornerRadius="14">
-                                    <Path
-                                        Width="18"
-                                        Height="18"
+                            Grid.RowSpan="2"
+                            Padding="14,14,10,10"
+                            Classes="card">
+                            <TabControl Classes="activityTabs" SelectedIndex="{Binding ActivityTabIndex}">
+                            <TabItem Classes="activityTab" Header="Transfers">
+                                <Grid>
+                                    <ScrollViewer Padding="0,0,12,0" IsVisible="{Binding HasTransfers}">
+                                        <ItemsControl ItemsSource="{Binding Transfers}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:TransferViewModel">
+                                                    <views:TransferCardView />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <StackPanel
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
-                                        Data="M0,4 L18,4 M14,0 L18,4 L14,8 M18,14 L0,14 M4,10 L0,14 L4,18"
-                                        Stroke="#76A6FF"
-                                        StrokeLineCap="Round"
-                                        StrokeThickness="1.5" />
-                                </Border>
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    FontSize="15"
-                                    FontWeight="SemiBold"
-                                    Text="Nothing transferring yet" />
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    Classes="muted"
-                                    Text="Choose a device, then add or drop files to get started." />
-                            </StackPanel>
-                        </Grid>
+                                        IsVisible="{Binding !HasTransfers}"
+                                        Spacing="8">
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            FontSize="15"
+                                            FontWeight="SemiBold"
+                                            Text="No transfers yet" />
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            Classes="muted"
+                                            Text="Started and incoming transfers will appear here." />
+                                    </StackPanel>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Classes="activityTab" Header="{Binding QueueCountText}">
+                                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                    <Border Padding="16" Background="#111E31" BorderBrush="#29466D" Classes="card">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                            <Border
+                                                Width="42"
+                                                Height="42"
+                                                VerticalAlignment="Center"
+                                                Background="#1B3152"
+                                                CornerRadius="12">
+                                                <TextBlock
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="18"
+                                                    FontWeight="Bold"
+                                                    Foreground="#78A8FF"
+                                                    Text="↗" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="4">
+                                                <TextBlock
+                                                    FontSize="16"
+                                                    FontWeight="SemiBold"
+                                                    Text="Ready to send" />
+                                                <TextBlock
+                                                    Classes="muted"
+                                                    Text="Review each batch before it leaves this device. Sequential sending preserves existing stream tuning." />
+                                            </StackPanel>
+                                            <StackPanel
+                                                Grid.Column="2"
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal"
+                                                Spacing="10">
+                                                <Border
+                                                    Padding="10,6"
+                                                    VerticalAlignment="Center"
+                                                    Background="#15263E"
+                                                    CornerRadius="8">
+                                                    <TextBlock
+                                                        FontSize="10"
+                                                        FontWeight="Bold"
+                                                        Foreground="#8DB4FF"
+                                                        Text="SEQUENTIAL" />
+                                                </Border>
+                                                <Button
+                                                    Classes="primary"
+                                                    Command="{Binding StartQueuedSendCommand}"
+                                                    Content="Start queue"
+                                                    IsEnabled="{Binding HasQueuedSends}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Grid Grid.Row="1">
+                                        <ScrollViewer Padding="0,0,12,0" IsVisible="{Binding HasQueuedSends}">
+                                            <ItemsControl ItemsSource="{Binding SendQueue}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:QueuedSendViewModel">
+                                                        <Border
+                                                            Margin="0,0,0,10"
+                                                            Padding="16"
+                                                            BorderBrush="#2A3A51"
+                                                            Classes="card">
+                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                                                                <StackPanel Spacing="6">
+                                                                    <TextBlock Classes="lbl" Text="DESTINATION DEVICE" />
+                                                                    <TextBlock
+                                                                        FontWeight="SemiBold"
+                                                                        Text="{Binding PeerText}"
+                                                                        TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Classes="muted">
+                                                                        <Run Text="{Binding FileCount}" />
+                                                                        <Run Text=" files · " />
+                                                                        <Run Text="{Binding SizeText}" />
+                                                                    </TextBlock>
+                                                                    <TextBlock
+                                                                        Classes="muted"
+                                                                        Text="{Binding FilePreview}"
+                                                                        TextTrimming="CharacterEllipsis"
+                                                                        ToolTip.Tip="{Binding FilePreview}" />
+                                                                    <TextBlock
+                                                                        Foreground="#FF9AA8"
+                                                                        IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                                        Text="{Binding ErrorText}"
+                                                                        TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                                <StackPanel
+                                                                    Grid.Column="1"
+                                                                    VerticalAlignment="Center"
+                                                                    Orientation="Horizontal"
+                                                                    Spacing="5">
+                                                                    <Button
+                                                                        Classes="ghost small"
+                                                                        Command="{Binding MoveUpCommand}"
+                                                                        Content="↑"
+                                                                        ToolTip.Tip="Move batch up" />
+                                                                    <Button
+                                                                        Classes="ghost small"
+                                                                        Command="{Binding MoveDownCommand}"
+                                                                        Content="↓"
+                                                                        ToolTip.Tip="Move batch down" />
+                                                                    <Button
+                                                                        Classes="danger small"
+                                                                        Command="{Binding RemoveCommand}"
+                                                                        Content="Remove" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                        <StackPanel
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding !HasQueuedSends}"
+                                            Spacing="8">
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                FontSize="15"
+                                                FontWeight="SemiBold"
+                                                Text="Your send queue is clear" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                Classes="muted"
+                                                Text="Select a device and add files to review a batch." />
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Classes="activityTab" Header="{Binding HistoryCountText}">
+                                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                                    <TextBox
+                                        Margin="14,0"
+                                        Watermark="Search history…"
+                                        Text="{Binding HistoryQuery, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Grid Grid.Row="1">
+                                        <ScrollViewer IsVisible="{Binding HasFilteredHistory}">
+                                            <ItemsControl ItemsSource="{Binding FilteredHistory}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:TransferHistoryItem">
+                                                        <Border
+                                                            Margin="14,0,14,10"
+                                                            Padding="0"
+                                                            Classes="card">
+                                                            <Grid ColumnDefinitions="3,*">
+                                                                <Border
+                                                                    Background="{Binding OutcomeBrush}"
+                                                                    CornerRadius="12,0,0,12" />
+                                                                <Grid
+                                                                    Grid.Column="1"
+                                                                    Margin="16,14"
+                                                                    ColumnDefinitions="Auto,*,Auto"
+                                                                    RowDefinitions="Auto,Auto,Auto"
+                                                                    ColumnSpacing="12"
+                                                                    RowSpacing="12">
+                                                                    <Border
+                                                                        Width="36"
+                                                                        Height="36"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="#1B2D49"
+                                                                        CornerRadius="10">
+                                                                        <TextBlock
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            FontSize="17"
+                                                                            FontWeight="SemiBold"
+                                                                            Foreground="#76A6FF"
+                                                                            Text="{Binding DirectionGlyph}" />
+                                                                    </Border>
+                                                                    <StackPanel
+                                                                        Grid.Column="1"
+                                                                        VerticalAlignment="Center"
+                                                                        Spacing="3">
+                                                                        <TextBlock
+                                                                            FontSize="14"
+                                                                            FontWeight="SemiBold"
+                                                                            Text="{Binding Title}"
+                                                                            TextTrimming="CharacterEllipsis" />
+                                                                        <TextBlock
+                                                                            Classes="muted"
+                                                                            Text="{Binding Timestamp}" />
+                                                                    </StackPanel>
+                                                                    <Border
+                                                                        Grid.Column="2"
+                                                                        Padding="10,5"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="{Binding OutcomeSurface}"
+                                                                        CornerRadius="7">
+                                                                        <TextBlock
+                                                                            FontSize="10"
+                                                                            FontWeight="Bold"
+                                                                            Foreground="{Binding OutcomeBrush}"
+                                                                            Text="{Binding Outcome}" />
+                                                                    </Border>
+                                                                    <Grid
+                                                                        Grid.Row="1"
+                                                                        Grid.ColumnSpan="3"
+                                                                        ColumnDefinitions="*,*"
+                                                                        ColumnSpacing="10">
+                                                                        <Border
+                                                                            Padding="10,8"
+                                                                            Background="#101827"
+                                                                            CornerRadius="8">
+                                                                            <StackPanel Spacing="2">
+                                                                                <TextBlock Classes="lbl" Text="FILES" />
+                                                                                <TextBlock
+                                                                                    Classes="val"
+                                                                                    FontSize="13"
+                                                                                    Text="{Binding Summary}" />
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                        <Border
+                                                                            Grid.Column="1"
+                                                                            Padding="10,8"
+                                                                            Background="#101827"
+                                                                            CornerRadius="8">
+                                                                            <StackPanel Spacing="2">
+                                                                                <TextBlock Classes="lbl" Text="TOTAL SIZE" />
+                                                                                <TextBlock
+                                                                                    Classes="val"
+                                                                                    FontSize="13"
+                                                                                    Text="{Binding SizeText}" />
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                    </Grid>
+                                                                    <TextBlock
+                                                                        Grid.Row="2"
+                                                                        Grid.ColumnSpan="2"
+                                                                        VerticalAlignment="Center"
+                                                                        Foreground="#FF9AA8"
+                                                                        IsVisible="{Binding HasError}"
+                                                                        Text="{Binding Error}"
+                                                                        TextTrimming="CharacterEllipsis"
+                                                                        ToolTip.Tip="{Binding Error}" />
+                                                                    <StackPanel
+                                                                        Grid.Row="2"
+                                                                        Grid.Column="2"
+                                                                        Orientation="Horizontal"
+                                                                        Spacing="8">
+                                                                        <Button
+                                                                            Classes="primary small"
+                                                                            Command="{Binding RetryCommand}"
+                                                                            Content="Queue retry"
+                                                                            IsVisible="{Binding CanRetry}" />
+                                                                        <Button
+                                                                            Classes="ghost small"
+                                                                            Command="{Binding OpenLocationCommand}"
+                                                                            Content="Open location"
+                                                                            IsVisible="{Binding CanOpenLocation}" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Classes="muted"
+                                            IsVisible="{Binding !HasFilteredHistory}"
+                                            Text="No matching history. Try a different search or complete a transfer first." />
+                                    </Grid>
+                                </Grid>
+                            </TabItem>
+                            </TabControl>
+                        </Border>
                     </Grid>
                 </Grid>
             </Grid>

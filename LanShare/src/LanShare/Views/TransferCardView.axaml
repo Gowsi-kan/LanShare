@@ -12,12 +12,21 @@
         <StackPanel Spacing="10">
 
             <!--  Header: glyph | file name (takes the leftover width and trims) | state badge  -->
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <TextBlock
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                <Border
+                    Width="34"
+                    Height="34"
                     VerticalAlignment="Center"
-                    FontSize="16"
-                    Foreground="#76A6FF"
-                    Text="{Binding DirectionGlyph}" />
+                    Background="#1B2D49"
+                    CornerRadius="10">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        FontSize="16"
+                        FontWeight="SemiBold"
+                        Foreground="#76A6FF"
+                        Text="{Binding DirectionGlyph}" />
+                </Border>
                 <TextBlock
                     Grid.Column="1"
                     VerticalAlignment="Center"
@@ -31,7 +40,9 @@
                     MaxWidth="240"
                     Padding="10,3"
                     VerticalAlignment="Center"
-                    Background="#1B2638"
+                    Background="#182437"
+                    BorderBrush="#2B3A51"
+                    BorderThickness="1"
                     CornerRadius="999">
                     <TextBlock
                         FontSize="12"
@@ -49,6 +60,56 @@
                 TextTrimming="CharacterEllipsis"
                 ToolTip.Tip="{Binding Subtitle}" />
 
+            <Border
+                Padding="14"
+                Background="#101B2B"
+                BorderBrush="#2A3A51"
+                BorderThickness="1"
+                CornerRadius="10"
+                IsVisible="{Binding IsAwaiting}">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="lbl" Text="INCOMING TRANSFER REVIEW" />
+                    <TextBlock
+                        FontWeight="SemiBold"
+                        Text="{Binding IncomingReviewText}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Classes="muted"
+                        Text="{Binding IncomingFilesPreview}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Classes="muted"
+                        Text="{Binding ConflictPreview}"
+                        TextWrapping="Wrap" />
+                    <ComboBox
+                        HorizontalAlignment="Left"
+                        MinWidth="250"
+                        ItemsSource="{Binding ConflictHandlingOptions}"
+                        SelectedIndex="{Binding ConflictHandlingIndex}" />
+                </StackPanel>
+            </Border>
+
+            <Border
+                Padding="12,10"
+                Background="#2A2022"
+                BorderBrush="#62453A"
+                BorderThickness="1"
+                CornerRadius="9"
+                IsVisible="{Binding RecoveryText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Spacing="4">
+                    <TextBlock
+                        FontSize="10"
+                        FontWeight="Bold"
+                        Foreground="#F5B942"
+                        Text="RECOVERY GUIDANCE" />
+                    <TextBlock
+                        FontSize="12"
+                        Foreground="#FFD2A0"
+                        Text="{Binding RecoveryText}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <ProgressBar
                 Height="6"
                 Margin="0,2"
@@ -59,42 +120,50 @@
 
             <!--  Stats: proportional columns, every value trims instead of overflowing  -->
             <Grid ColumnDefinitions="1.6*,1.1*,1*,1.3*" ColumnSpacing="10">
-                <StackPanel Spacing="1">
-                    <TextBlock Classes="lbl" Text="TRANSFERRED" />
-                    <TextBlock
-                        Classes="val"
-                        FontSize="13"
-                        Text="{Binding Transferred}"
-                        TextTrimming="CharacterEllipsis"
-                        ToolTip.Tip="{Binding Transferred}" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="1">
-                    <TextBlock Classes="lbl" Text="SPEED" />
-                    <TextBlock
-                        Classes="val"
-                        FontSize="13"
-                        Text="{Binding SpeedText}"
-                        TextTrimming="CharacterEllipsis"
-                        ToolTip.Tip="{Binding SpeedText}" />
-                </StackPanel>
-                <StackPanel Grid.Column="2" Spacing="1">
-                    <TextBlock Classes="lbl" Text="ETA" />
-                    <TextBlock
-                        Classes="val"
-                        FontSize="13"
-                        Text="{Binding EtaText}"
-                        TextTrimming="CharacterEllipsis"
-                        ToolTip.Tip="{Binding EtaText}" />
-                </StackPanel>
-                <StackPanel Grid.Column="3" Spacing="1">
-                    <TextBlock Classes="lbl" Text="LINK" />
-                    <TextBlock
-                        Classes="val"
-                        FontSize="13"
-                        Text="{Binding LinkText}"
-                        TextTrimming="CharacterEllipsis"
-                        ToolTip.Tip="{Binding LinkText}" />
-                </StackPanel>
+                <Border Padding="10,8" Background="#101827" CornerRadius="8">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="lbl" Text="TRANSFERRED" />
+                        <TextBlock
+                            Classes="val"
+                            FontSize="13"
+                            Text="{Binding Transferred}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTip.Tip="{Binding Transferred}" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Padding="10,8" Background="#101827" CornerRadius="8">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="lbl" Text="SPEED" />
+                        <TextBlock
+                            Classes="val"
+                            FontSize="13"
+                            Text="{Binding SpeedText}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTip.Tip="{Binding SpeedText}" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Padding="10,8" Background="#101827" CornerRadius="8">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="lbl" Text="ETA" />
+                        <TextBlock
+                            Classes="val"
+                            FontSize="13"
+                            Text="{Binding EtaText}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTip.Tip="{Binding EtaText}" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Padding="10,8" Background="#101827" CornerRadius="8">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="lbl" Text="LINK" />
+                        <TextBlock
+                            Classes="val"
+                            FontSize="13"
+                            Text="{Binding LinkText}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTip.Tip="{Binding LinkText}" />
+                    </StackPanel>
+                </Border>
             </Grid>
 
             <StackPanel Spacing="2">
