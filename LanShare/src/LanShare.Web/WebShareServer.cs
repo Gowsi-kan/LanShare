@@ -434,7 +434,10 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             }
         );
 
-        app.MapPut("/api/upload", (HttpContext ctx) => UploadAsync(ctx));
+        app.MapPut(
+            "/api/upload",
+            (Delegate)((HttpContext ctx) => UploadAsync(ctx))
+        );
 
         app.MapDelete(
             "/api/upload",

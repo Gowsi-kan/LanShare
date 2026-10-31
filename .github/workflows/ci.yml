@@ -8,6 +8,9 @@ on:
 
 jobs:
   test:
+    defaults:
+      run:
+        working-directory: LanShare
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +40,9 @@ jobs:
 
   bench:
     needs: test
+    defaults:
+      run:
+        working-directory: LanShare
     runs-on: ubuntu-latest
     continue-on-error: true   # shared runners are noisy: report, don't block (see notes)
     timeout-minutes: 30
@@ -51,4 +57,4 @@ jobs:
         if: always()
         with:
           name: bench-results
-          path: bench-results.json
+          path: LanShare/bench-results.json
