@@ -10,7 +10,12 @@ using LanShare.Services;
 
 namespace LanShare.ViewModels;
 
-public sealed record SendPlan(Peer Peer, IReadOnlyList<(string Full, string Rel)> Files);
+public sealed record SendPlan(
+    Peer Peer,
+    IReadOnlyList<(string Full, string Rel)> Files,
+    Guid? QueueId = null,
+    long? TotalBytes = null
+);
 
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
@@ -21,13 +26,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     int _tick;
 
     readonly AppSettings _settings;
+    readonly TransferHistoryStore _historyStore = new();
     readonly List<string> _pending = [];
     bool _initializing = true;
     bool _trayHintShown;
+    bool _startingQueuedSend;
+    Guid? _activeQueuedSendId;
 
     public ObservableCollection<Peer> Peers { get; } = [];
     public ObservableCollection<TransferViewModel> Transfers { get; } = [];
+    public ObservableCollection<QueuedSendViewModel> SendQueue { get; } = [];
+    public ObservableCollection<TransferHistoryItem> History { get; } = [];
+    public ObservableCollection<TransferHistoryItem> FilteredHistory { get; } = [];
     public bool HasTransfers => Transfers.Count > 0;
+    public bool HasQueuedSends => SendQueue.Count > 0;
+    public bool HasFilteredHistory => FilteredHistory.Count > 0;
+    public string QueueCountText => $"Queue · {SendQueue.Count}";
+    public string HistoryCountText => $"History · {History.Count}";
 
     public Notifier Notifier { get; } = new();
     public Func<bool> IsWindowActive { get; set; } = () => false;
@@ -97,6 +112,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     string _pendingText = "";
 
+    [ObservableProperty]
+    string _historyQuery = "";
+
+    [ObservableProperty]
+    int _activityTabIndex;
+
     public string StreamsText =>
         StreamsSetting < 0.5 ? "Auto" : $"{(int)Math.Round(StreamsSetting)}";
     public string TargetText =>
@@ -111,6 +132,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(AppSettings settings)
     {
         Transfers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTransfers));
+        SendQueue.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasQueuedSends));
+            OnPropertyChanged(nameof(QueueCountText));
+        };
+        History.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HistoryCountText));
+            RefreshHistoryFilter();
+        };
+        foreach (var record in _historyStore.Load())
+            History.Add(new TransferHistoryItem(this, record));
         DeviceName = Environment.MachineName;
         _settings = settings;
         RunInBackground = settings.RunInBackground;
@@ -186,6 +219,30 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnBandwidthIndexChanged(int value) =>
         _limiter.BytesPerSecond =
             BandwidthMBps[Math.Clamp(value, 0, BandwidthMBps.Length - 1)] * 1_048_576L;
+
+    partial void OnHistoryQueryChanged(string value) => RefreshHistoryFilter();
+
+    void RefreshHistoryFilter()
+    {
+        var query = HistoryQuery.Trim();
+        FilteredHistory.Clear();
+        foreach (var item in History)
+        {
+            var record = item.Record;
+            if (
+                query.Length == 0
+                || record.Peer.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || record.Direction.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || record.Summary.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || record.Outcome.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || record.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    .Contains(query, StringComparison.OrdinalIgnoreCase)
+                || (record.Error?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+            )
+                FilteredHistory.Add(item);
+        }
+        OnPropertyChanged(nameof(HasFilteredHistory));
+    }
 
     public void ReportError(string message) => StatusMessage = message;
 
@@ -278,9 +335,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     void OnIncoming(IncomingJob job) =>
         Dispatcher.UIThread.Post(() =>
         {
-            AddTransfer(TransferViewModel.Incoming(this, job));
+            var transfer = TransferViewModel.Incoming(this, job);
+            AddTransfer(transfer);
             if (AutoAccept)
                 job.Accept(DownloadDir);
+            else
+            {
+                ActivityTabIndex = 0;
+                _ = CheckIncomingConflictsAsync(transfer, job.Offer);
+            }
             if (!IsWindowActive())
                 Notifier.Show(
                     AutoAccept ? "Receiving files" : "Incoming files",
@@ -289,6 +352,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     ShowMainWindow
                 );
         });
+
+    static async Task CheckIncomingConflictsAsync(
+        TransferViewModel transfer,
+        Offer offer
+    )
+    {
+        try
+        {
+            var count = await Task.Run(
+                () => ReceiverSession.CountConflicts(offer, transfer.ReceiveDirectory)
+            );
+            Dispatcher.UIThread.Post(() => transfer.SetConflictPreview(count));
+        }
+        catch (
+            Exception e
+        ) when (
+            e is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+        )
+        {
+            Dispatcher.UIThread.Post(() => transfer.SetConflictPreviewError(e.Message));
+        }
+    }
 
     [RelayCommand]
     void AddPeer()
@@ -332,11 +421,63 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             StatusMessage = "Nothing to send.";
             return;
         }
-        await StartSendAsync(new SendPlan(peer, files));
+        QueuedSendViewModel item;
+        try
+        {
+            long totalBytes = await Task.Run(() => files.Sum(file => new FileInfo(file.Full).Length));
+            item = new QueuedSendViewModel(this, new SendPlan(peer, files, TotalBytes: totalBytes));
+        }
+        catch (Exception e)
+        {
+            StatusMessage = e.Message;
+            return;
+        }
+        SendQueue.Add(item);
+        ActivityTabIndex = 1;
+        StatusMessage = $"Added to send queue: {item.FileCount} files · {item.SizeText}. Review the queue before sending.";
+    }
+
+    [RelayCommand]
+    async Task StartQueuedSendAsync()
+    {
+        if (_startingQueuedSend || _activeQueuedSendId is not null || SendQueue.Count == 0)
+            return;
+
+        _startingQueuedSend = true;
+        var item = SendQueue[0];
+        _activeQueuedSendId = item.Id;
+        item.ErrorText = "";
+        var transfer = await StartSendAsync(item.Plan);
+        if (transfer is null)
+        {
+            _activeQueuedSendId = null;
+            item.ErrorText = StatusMessage;
+        }
+        else
+        {
+            SendQueue.Remove(item);
+            ActivityTabIndex = 0;
+            StatusMessage = "Transfer started. The next queued batch starts when this transfer finishes.";
+        }
+        _startingQueuedSend = false;
+    }
+
+    internal void MoveQueuedSend(QueuedSendViewModel item, int delta)
+    {
+        var index = SendQueue.IndexOf(item);
+        var target = index + delta;
+        if (index >= 0 && target >= 0 && target < SendQueue.Count)
+            SendQueue.Move(index, target);
+    }
+
+    internal void RemoveQueuedSend(QueuedSendViewModel item)
+    {
+        SendQueue.Remove(item);
+        StatusMessage = "Queued batch removed.";
     }
 
     // The SenderSession constructor stats every file; with big folders / network shares that must not run on the UI thread.
-    internal async Task StartSendAsync(SendPlan plan)
+    internal async Task<TransferViewModel?> StartSendAsync(SendPlan plan)
     {
         var opts = new SendOptions(
             (int)Math.Round(StreamsSetting),
@@ -355,12 +496,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     opts
                 )
             );
-            AddTransfer(TransferViewModel.Outgoing(this, session, plan));
+            var transfer = TransferViewModel.Outgoing(this, session, plan);
+            AddTransfer(transfer);
             StatusMessage = "";
+            return transfer;
         }
         catch (Exception e)
         {
             StatusMessage = e.Message;
+            return null;
         }
     }
 
@@ -368,8 +512,34 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (t.Plan is null)
             return;
-        Transfers.Remove(t);
-        await StartSendAsync(t.Plan);
+        QueueRetry(t.Plan);
+        await Task.CompletedTask;
+    }
+
+    internal void QueueRetry(SendPlan plan)
+    {
+        SendQueue.Add(
+            new QueuedSendViewModel(this, plan with { QueueId = null })
+        );
+        ActivityTabIndex = 1;
+        StatusMessage = "Retry added to the send queue. Review it before starting.";
+    }
+
+    internal void OpenHistoryLocation(string location)
+    {
+        try
+        {
+            if (!Directory.Exists(location))
+            {
+                StatusMessage = "The saved location is no longer available.";
+                return;
+            }
+            Process.Start(new ProcessStartInfo(location) { UseShellExecute = true });
+        }
+        catch (Exception e)
+        {
+            StatusMessage = $"Could not open the saved location: {e.Message}";
+        }
     }
 
     internal void Dismiss(TransferViewModel t)
@@ -513,6 +683,37 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     void OnTransferFinished(TransferViewModel t)
     {
         DiagLog.Info("Transfer finished: " + t.Report().Replace(Environment.NewLine, " | "));
+        var state = t.State;
+        var record = new TransferHistoryRecord(
+            Guid.NewGuid(),
+            DateTimeOffset.Now,
+            t.IsIncoming ? "Received" : "Sent",
+            t.PeerName,
+            $"{state.TotalFiles} file{(state.TotalFiles == 1 ? "" : "s")}",
+            state.TotalBytes,
+            t.FinalPhase.ToString(),
+            t.ErrorText,
+            t.IsIncoming ? t.ReceiveDirectory : null
+        );
+        _ = Task.Run(() =>
+        {
+            var saved = _historyStore.Add(record, out var error);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (saved)
+                    History.Insert(0, new TransferHistoryItem(this, record, t.Plan));
+                else
+                    StatusMessage = $"Transfer finished, but its history could not be saved: {error}";
+            });
+        });
+
+        if (t.Plan?.QueueId is { } queueId && _activeQueuedSendId == queueId)
+        {
+            _activeQueuedSendId = null;
+            _startingQueuedSend = false;
+            _ = StartQueuedSendAsync();
+        }
+
         if (IsWindowActive())
             return; // the user is looking at the window
         switch (t.FinalPhase)

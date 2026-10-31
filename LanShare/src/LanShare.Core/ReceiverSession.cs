@@ -30,11 +30,25 @@ public sealed class ReceiverSession : IDisposable
         public byte[] Done { get; } = done;
         public object Gate { get; } = new();
         public bool Resumed { get; init; }
+        public bool SkippedExisting { get; init; }
         public bool Claimed;
         public SafeFileHandle? Handle;
         public int Remaining;
         public volatile bool Finalized;
         public volatile bool Dirty;
+    }
+
+    public static int CountConflicts(Offer offer, string destination)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(destination));
+        int count = 0;
+        foreach (var entry in offer.Files)
+        {
+            var path = Resolve(root, entry.RelativePath);
+            if (File.Exists(path) || Directory.Exists(path))
+                count++;
+        }
+        return count;
     }
 
     readonly record struct Frame(
@@ -59,17 +73,32 @@ public sealed class ReceiverSession : IDisposable
     public TransferState State { get; }
     public Task AllDone => _allDone.Task;
     public string PeerFingerprint { get; set; } = "";
+    readonly ConflictHandling _conflictHandling;
 
-    ReceiverSession(Offer offer, TransferState state, FileState[] files, string journalPath)
+    ReceiverSession(
+        Offer offer,
+        TransferState state,
+        FileState[] files,
+        string journalPath,
+        ConflictHandling conflictHandling
+    )
     {
         _offer = offer;
         State = state;
         _files = files;
         _journalPath = journalPath;
+        _conflictHandling = conflictHandling;
     }
 
-    public static ReceiverSession Prepare(Offer offer, string root, TransferState state)
+    public static ReceiverSession Prepare(
+        Offer offer,
+        string root,
+        TransferState state,
+        ConflictHandling conflictHandling = ConflictHandling.Rename
+    )
     {
+        if (!Enum.IsDefined(conflictHandling))
+            throw new ArgumentOutOfRangeException(nameof(conflictHandling));
         Directory.CreateDirectory(root);
         var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         var journalPath = Path.Combine(rootFull, $".lfs-{BatchId(offer)}.journal");
@@ -99,12 +128,21 @@ public sealed class ReceiverSession : IDisposable
                 done = TryLoadState(finalBase + ".lfsstate", finalBase + ".lfspart", e, chunks);
             }
 
+            bool skippedExisting =
+                conflictHandling == ConflictHandling.KeepExisting
+                && (File.Exists(finalBase) || Directory.Exists(finalBase));
+            if (skippedExisting)
+            {
+                done = new byte[small ? 1 : chunks];
+                Array.Fill(done, (byte)1);
+            }
             bool resume = done is not null;
-            if (!resume)
+            if (!resume && !skippedExisting)
                 needed += e.Size;
             files[i] = new FileState(e, finalBase, done ?? new byte[chunks], i, small)
             {
                 Resumed = resume,
+                SkippedExisting = skippedExisting,
             };
         }
 
@@ -115,16 +153,27 @@ public sealed class ReceiverSession : IDisposable
         if (needed + (64L << 20) > free)
             throw new InsufficientSpaceException(needed, free);
 
-        var session = new ReceiverSession(offer, state, files, journalPath);
+        var session = new ReceiverSession(offer, state, files, journalPath, conflictHandling);
         try
         {
             foreach (var f in files)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(f.FinalBase)!);
 
+                if (f.SkippedExisting)
+                {
+                    TryDelete(f.PartPath);
+                    TryDelete(f.StatePath);
+                    f.Finalized = true;
+                    state.AddBytes(f.Entry.Size);
+                    state.FileDone();
+                    continue;
+                }
+
                 if (f.Entry.Size == 0)
                 {
-                    File.WriteAllBytes(UniquePath(f.FinalBase), []);
+                    File.WriteAllBytes(f.PartPath, []);
+                    session.CommitFile(f);
                     f.Finalized = true;
                     state.FileDone();
                     continue;
@@ -458,8 +507,7 @@ public sealed class ReceiverSession : IDisposable
         try
         {
             await File.WriteAllBytesAsync(f.PartPath, data, ct);
-            var dest = UniquePath(f.FinalBase);
-            File.Move(f.PartPath, dest);
+            var dest = CommitFile(f);
             lock (f.Gate)
                 f.Done[0] = 1;
             f.Finalized = true;
@@ -487,7 +535,7 @@ public sealed class ReceiverSession : IDisposable
         var h = f.Handle!;
         RandomAccess.FlushToDisk(h);
         h.Dispose();
-        File.Move(f.PartPath, UniquePath(f.FinalBase));
+        CommitFile(f);
         TryDelete(f.StatePath);
         State.FileDone();
         State.AddStage(Stage.Finalize, t0);
@@ -675,7 +723,7 @@ public sealed class ReceiverSession : IDisposable
 
     static string UniquePath(string path)
     {
-        if (!File.Exists(path))
+        if (!File.Exists(path) && !Directory.Exists(path))
             return path;
         var dir = Path.GetDirectoryName(path)!;
         var name = Path.GetFileNameWithoutExtension(path);
@@ -683,9 +731,35 @@ public sealed class ReceiverSession : IDisposable
         for (int i = 1; ; i++)
         {
             var p = Path.Combine(dir, $"{name} ({i}){ext}");
-            if (!File.Exists(p))
+            if (!File.Exists(p) && !Directory.Exists(p))
                 return p;
         }
+    }
+
+    string CommitFile(FileState file)
+    {
+        if (_conflictHandling == ConflictHandling.KeepExisting)
+        {
+            if (File.Exists(file.FinalBase) || Directory.Exists(file.FinalBase))
+            {
+                TryDelete(file.PartPath);
+                return file.FinalBase;
+            }
+            File.Move(file.PartPath, file.FinalBase);
+            return file.FinalBase;
+        }
+
+        if (_conflictHandling == ConflictHandling.Replace)
+        {
+            if (Directory.Exists(file.FinalBase))
+                throw new IOException($"Cannot replace a directory: {file.Entry.RelativePath}");
+            File.Move(file.PartPath, file.FinalBase, overwrite: true);
+            return file.FinalBase;
+        }
+
+        var destination = UniquePath(file.FinalBase);
+        File.Move(file.PartPath, destination);
+        return destination;
     }
 
     static long FreeSpace(string root)

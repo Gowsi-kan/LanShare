@@ -47,6 +47,29 @@
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Foreground" Value="#F3F6FC" />
         </Style>
+        <Style Selector="TabControl.activityTabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TabItem.activityTab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="0,0,6,8" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#9AA9BF" />
+        </Style>
+        <Style Selector="TabItem.activityTab:selected">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#F3F6FC" />
+        </Style>
+        <Style Selector="TabItem.activityTab:pointerover">
+            <Setter Property="Background" Value="#19263A" />
+        </Style>
 
         <Style Selector="Button.winbtn">
             <Setter Property="Width" Value="46" />

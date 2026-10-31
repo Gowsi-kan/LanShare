@@ -44,6 +44,14 @@ public sealed partial class TransferViewModel : ObservableObject
     public string DirectionGlyph => IsIncoming ? "↓" : "↑";
     public string Title { get; private init; } = "";
     public string Subtitle { get; private init; } = "";
+    public string PeerName { get; private init; } = "";
+    public TransferState State => _state;
+    public bool IsIncomingOffer => _job is not null;
+    public string ReceiveDirectory { get; private init; } = "";
+    public string IncomingReviewText { get; private init; } = "";
+    public string IncomingFilesPreview { get; private init; } = "";
+    public IReadOnlyList<string> ConflictHandlingOptions { get; } =
+        ["Rename conflicts (recommended)", "Keep existing files", "Replace existing files"];
 
     public event Action<TransferViewModel>? Finished;
     public Phase FinalPhase => _state.Phase;
@@ -102,6 +110,15 @@ public sealed partial class TransferViewModel : ObservableObject
     [ObservableProperty]
     string _diagText = "";
 
+    [ObservableProperty]
+    string _conflictPreview = "Checking destination for existing names…";
+
+    [ObservableProperty]
+    int _conflictHandlingIndex;
+
+    [ObservableProperty]
+    string _recoveryText = "";
+
     TransferViewModel(
         MainViewModel owner,
         TransferState state,
@@ -131,6 +148,11 @@ public sealed partial class TransferViewModel : ObservableObject
             Title =
                 $"{o.Files.Count} file{(o.Files.Count == 1 ? "" : "s")} · {Format.Bytes(o.TotalBytes)}",
             Subtitle = $"From {job.Peer}",
+            PeerName = job.Peer,
+            ReceiveDirectory = owner.DownloadDir,
+            IncomingReviewText =
+                $"Save to {owner.DownloadDir}. Existing names can be renamed, kept, or replaced.",
+            IncomingFilesPreview = FilePreview(o.Files.Select(file => file.RelativePath)),
         };
         vm.Refresh();
         return vm;
@@ -149,6 +171,7 @@ public sealed partial class TransferViewModel : ObservableObject
             Plan = plan,
             Title = $"{n} file{(n == 1 ? "" : "s")} · {Format.Bytes(session.State.TotalBytes)}",
             Subtitle = $"To {plan.Peer.Name} ({plan.Peer.Address})",
+            PeerName = plan.Peer.Name,
         };
         vm.Refresh();
         _ = Task.Run(() => session.RunAsync(cts.Token));
@@ -171,6 +194,8 @@ public sealed partial class TransferViewModel : ObservableObject
             Subtitle = up.IsDownload
                 ? $"{Format.Bytes(up.State.TotalBytes)} · to phone / browser ({up.Peer})"
                 : $"{Format.Bytes(up.State.TotalBytes)} · from phone / browser ({up.Peer})",
+            PeerName = up.Peer,
+            ReceiveDirectory = owner.DownloadDir,
         };
         vm.Refresh();
         return vm;
@@ -282,6 +307,7 @@ public sealed partial class TransferViewModel : ObservableObject
             $"{s.FilesDone}/{s.TotalFiles} files · {s.ActiveStreams} streams · {s.Retries} retries"
             + (saved >= 0.02 ? $" · {saved:P0} saved by compression" : "");
         CurrentFile = s.CurrentFile;
+        RecoveryText = RecoveryAdvice(phase, s.Error, IsIncoming);
 
         (PhaseText, PhaseBrush) = phase switch
         {
@@ -336,7 +362,43 @@ public sealed partial class TransferViewModel : ObservableObject
     }
 
     [RelayCommand]
-    void Accept() => _job?.Accept(_owner.DownloadDir);
+    void Accept() =>
+        _job?.Accept(ReceiveDirectory, (ConflictHandling)ConflictHandlingIndex);
+
+    public void SetConflictPreview(int count)
+    {
+        ConflictPreview = count == 0
+            ? "No existing names found in the destination."
+            : $"{count} existing name{(count == 1 ? "" : "s")} found. Your selected policy will be applied.";
+    }
+
+    public void SetConflictPreviewError(string message) =>
+        ConflictPreview = $"Could not check destination names: {message}";
+
+    static string FilePreview(IEnumerable<string> paths)
+    {
+        var names = paths.Take(5).ToArray();
+        return string.Join(Environment.NewLine, names)
+            + (paths.Skip(names.Length).Any() ? $"{Environment.NewLine}…and more" : "");
+    }
+
+    static string RecoveryAdvice(Phase phase, string? error, bool incoming)
+    {
+        if (phase == Phase.Failed)
+            return $"Stopped: {error ?? "The transfer failed."} "
+                + (incoming
+                    ? "The sender can retry; verified partial data may be reused."
+                    : "Retry will reconnect and reuse verified receiver data where available.");
+        if (phase == Phase.Cancelled)
+            return incoming
+                ? "Cancelled. The sender may retry; verified partial data can be resumed."
+                : "Cancelled. Retry / Resume can continue from receiver data already saved.";
+        if (phase == Phase.Declined)
+            return "The other device declined this transfer. Confirm the destination and try again.";
+        if (phase == Phase.Paused)
+            return "Transfer is paused. Resume it here or ask the other device to resume.";
+        return "";
+    }
 
     [RelayCommand]
     void Decline() => _job?.Decline();

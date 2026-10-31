@@ -139,6 +139,58 @@ public class TransferTests
     }
 
     [Fact]
+    public async Task ExistingFileConflict_RenameKeepsBothFiles()
+    {
+        await using var rig = new Rig();
+        var source = rig.AddFile("same.bin", 160_000, seed: 41);
+        var existing = Path.Combine(rig.Dst, "same.bin");
+        TestData.WriteFile(existing, 160_000, seed: 42);
+
+        var session = rig.NewSession([source], rig.Options());
+        await rig.RunAsync(session, T);
+
+        Assert.Equal(Phase.Completed, session.State.Phase);
+        Assert.Equal(TestData.Sha256(existing), TestData.Sha256(Path.Combine(rig.Dst, "same.bin")));
+        Assert.Equal(
+            TestData.Sha256(source.Full),
+            TestData.Sha256(Path.Combine(rig.Dst, "same (1).bin"))
+        );
+    }
+
+    [Fact]
+    public async Task ExistingFileConflict_KeepExistingSkipsIncomingBytes()
+    {
+        await using var rig = new Rig { ConflictHandling = ConflictHandling.KeepExisting };
+        var source = rig.AddFile("same.bin", 160_000, seed: 43);
+        var existing = Path.Combine(rig.Dst, "same.bin");
+        TestData.WriteFile(existing, 160_000, seed: 44);
+        var originalHash = TestData.Sha256(existing);
+
+        var session = rig.NewSession([source], rig.Options());
+        await rig.RunAsync(session, T);
+
+        Assert.Equal(Phase.Completed, session.State.Phase);
+        Assert.Equal(new FileInfo(source.Full).Length, session.State.DoneBytes);
+        Assert.Equal(originalHash, TestData.Sha256(existing));
+    }
+
+    [Fact]
+    public async Task ExistingFileConflict_ReplaceReplacesOnlyAfterTransfer()
+    {
+        await using var rig = new Rig { ConflictHandling = ConflictHandling.Replace };
+        var source = rig.AddFile("same.bin", 160_000, seed: 45);
+        var existing = Path.Combine(rig.Dst, "same.bin");
+        TestData.WriteFile(existing, 160_000, seed: 46);
+
+        var session = rig.NewSession([source], rig.Options());
+        await rig.RunAsync(session, T);
+
+        Assert.Equal(Phase.Completed, session.State.Phase);
+        Assert.Equal(TestData.Sha256(source.Full), TestData.Sha256(existing));
+        Assert.Single(Directory.GetFiles(rig.Dst));
+    }
+
+    [Fact]
     public async Task Pairing_IsAskedOnce_ThenRemembered()
     {
         var senderUi = new FixedPairingUi(true);

@@ -16,6 +16,9 @@ Transfers happen over the local network: there is no cloud relay or account requ
 - Resume interrupted computer-to-computer transfers using per-file chunk state.
 - Bundle small files, use parallel streams, and optionally compress data with adaptive LZ4.
 - Pause, cancel, retry, and resume transfers; adjust the outgoing bandwidth limit.
+- Review, reorder, and queue outgoing batches; queued batches run one at a time while each transfer keeps its parallel-stream tuning.
+- Review incoming file names and choose to rename conflicts, keep existing files, or replace them after the new copy is complete.
+- Search local transfer history and queue an in-session retry or reopen a saved destination.
 - Start optional phone access to upload files from a browser or download files shared by the desktop app. The UI provides a QR link and a PIN; incoming phone uploads can require approval. HTTPS is optional.
 - Check transfer integrity with XXH3 checksums.
 
@@ -107,6 +110,8 @@ Large files are written to temporary `.lfspart` files, with `.lfsstate` metadata
 - Small files are bundled to reduce per-file network overhead.
 - Receiver resume checkpoints are written periodically (about every 30 seconds during active transfers).
 - The benchmark reports throughput and verifies transferred files. Its loopback results measure local CPU, storage, and protocol overhead; they are not a prediction of Wi-Fi or LAN throughput.
+
+The desktop app stores up to 500 transfer-history records locally. History stores transfer summaries and receive destinations, not outgoing file paths; retry is available for outgoing transfers while their source files remain available in the current app session.
 
 Run a short benchmark from the repository root:
 
