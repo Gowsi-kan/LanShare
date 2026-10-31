@@ -1,6 +1,10 @@
 # LanShare
 
+[![Latest release](https://img.shields.io/badge/release-v2.0.0-blue)](https://github.com/Gowsi-kan/LanShare/releases/tag/v2.0.0)
+
 LanShare is a .NET 10 desktop application for transferring files between computers on a local network. It supports large files, folders, and batches of small files, with resumable transfers and a graphical Avalonia UI. An optional browser-based feature lets a phone upload files to the computer or download files the computer has shared.
+
+The current repository release is **v2.0.0**. See the [release notes](LanShare/RELEASE_NOTES_v2.0.0.md) and [GitHub release](https://github.com/Gowsi-kan/LanShare/releases/tag/v2.0.0).
 
 Transfers happen over the local network: there is no cloud relay or account required.
 

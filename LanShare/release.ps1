@@ -3,9 +3,9 @@
   Build, package, tag and publish a LanShare GitHub release in one go.
 
 .EXAMPLE
-  .\release.ps1 -Version 1.0.0
+  .\release.ps1 -Version 2.0.0
   .\release.ps1 -Version 1.1.0-beta.1 -PreRelease
-  .\release.ps1 -Version 1.0.0 -NotesFile RELEASE_NOTES.md
+  .\release.ps1 -Version 2.0.0 -NotesFile RELEASE_NOTES_v2.0.0.md
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Version,
@@ -102,10 +102,13 @@ Fast, resumable large-file transfer over your LAN.
 - **Linux:** ``LanShare-$Tag-linux-x64.tar.gz`` (after extracting, run ``chmod +x LanShare``)
 - Checksums: ``SHA256SUMS.txt``
 
-> Windows may show a SmartScreen warning for an unsigned app: click **More info**, then **Run anyway**.
+### Highlights
+- TLS-protected computer-to-computer transfers with device pairing.
+- Resumable transfers, parallel streams, adaptive compression, and small-file bundling.
+- Optional phone/browser uploads and downloads with a QR link and PIN.
+- Pause, cancel, retry/resume, live bandwidth limits, and transfer integrity checks.
 
-### Known limitations
-No encryption/auth (trusted LAN only), no settings persistence, no whole-file end-to-end hash.
+> Windows may show a SmartScreen warning for an unsigned app: click **More info**, then **Run anyway**.
 "@
 
 # ---------- 6. Confirm ----------
