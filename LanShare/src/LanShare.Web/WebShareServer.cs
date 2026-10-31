@@ -775,9 +775,6 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                         received += seg.Length;
                         state.AddBytes(seg.Length);
                         state.CurrentFile = q.Name;
-                        DiagLog.Info(
-                            $"Phone upload finished: {Format.Bytes(q.Size)} from {slot.Upload.Peer}"
-                        );
                     }
                     reader.AdvanceTo(buf.End);
                     if (r.IsCompleted)
