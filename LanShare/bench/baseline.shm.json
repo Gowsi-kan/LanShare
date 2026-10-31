@@ -1,0 +1,83 @@
+{
+  "Env": "Linux Mint 22.3 | X64 | 8 cores | /dev/shm",
+  "Created": "2026-10-31 19:05:49Z",
+  "Results": [
+    {
+      "Name": "large-random | 1 stream",
+      "Seconds": 0.874,
+      "MBps": 614.4,
+      "FilesPerSec": 1.1,
+      "SavedPct": 0,
+      "Verified": true,
+      "MinMBps": 288.4,
+      "MaxMBps": 675.4,
+      "Busy": "sender[Send 86%, SourceRead 16%] receiver[Disk 15%, Prepare 12%]"
+    },
+    {
+      "Name": "large-random | 4 streams",
+      "Seconds": 0.572,
+      "MBps": 938.5,
+      "FilesPerSec": 1.7,
+      "SavedPct": 0,
+      "Verified": true,
+      "MinMBps": 748.6,
+      "MaxMBps": 990.2,
+      "Busy": "sender[Send 67%, SourceRead 10%] receiver[Prepare 25%, Disk 11%]"
+    },
+    {
+      "Name": "large-random | auto-tune",
+      "Seconds": 0.61,
+      "MBps": 880.4,
+      "FilesPerSec": 1.6,
+      "SavedPct": 0,
+      "Verified": true,
+      "MinMBps": 872.7,
+      "MaxMBps": 895.5,
+      "Busy": "sender[Send 83%, SourceRead 13%] receiver[Prepare 15%, Disk 13%]"
+    },
+    {
+      "Name": "text | compress off",
+      "Seconds": 0.281,
+      "MBps": 954.8,
+      "FilesPerSec": 3.6,
+      "SavedPct": 0,
+      "Verified": true,
+      "MinMBps": 922.2,
+      "MaxMBps": 984.1,
+      "Busy": "sender[Send 71%, SourceRead 10%] receiver[Prepare 17%, Disk 13%]"
+    },
+    {
+      "Name": "text | compress on",
+      "Seconds": 0.375,
+      "MBps": 716.2,
+      "FilesPerSec": 2.7,
+      "SavedPct": 73.4,
+      "Verified": true,
+      "MinMBps": 616.8,
+      "MaxMBps": 760.4,
+      "Busy": "sender[Compress 73%, Send 10%] receiver[NetReceive 71%, Decompress 17%, Prepare 14%]"
+    },
+    {
+      "Name": "small x20000 | compress off",
+      "Seconds": 0.661,
+      "MBps": 511.9,
+      "FilesPerSec": 30268.5,
+      "SavedPct": 0,
+      "Verified": true,
+      "MinMBps": 494.3,
+      "MaxMBps": 613.5,
+      "Busy": "sender[Send 54%, SourceRead 16%] receiver[NetReceive 22%, Prepare 11%]"
+    },
+    {
+      "Name": "small x20000 | compress on",
+      "Seconds": 0.667,
+      "MBps": 507.2,
+      "FilesPerSec": 29987.6,
+      "SavedPct": 73.5,
+      "Verified": true,
+      "MinMBps": 496.8,
+      "MaxMBps": 517.4,
+      "Busy": "sender[Compress 60%, SourceRead 14%, Send 11%] receiver[NetReceive 70%, Decompress 14%, Prepare 9%]"
+    }
+  ]
+}

@@ -101,7 +101,7 @@ public static class SystemInfo
                     )
                     .Select(a => a.Address.ToString());
                 list.Add(
-                    $"{nic.Name} ({nic.Description}) · {NetInfo.Kind(nic.NetworkInterfaceType)} · "
+                    $"{nic.Name} ({nic.Description}) · {NetInfo.Kind(nic)} · "
                         + $"{(nic.Speed > 0 ? Format.LinkRate(nic.Speed) : "speed unknown")} · {string.Join(", ", ips)}"
                 );
             }

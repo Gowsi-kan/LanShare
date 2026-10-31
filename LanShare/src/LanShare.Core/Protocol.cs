@@ -35,7 +35,7 @@ public static class Protocol
     public const int BundleFile = -1; // fileIdx marker: frame carries a bundle of small files
     public const int SmallFileLimit = 256 * 1024;
     public const int MaxBundleFiles = 4096;
-    public const int PipelineDepth = 4; // unacked frames in flight per stream
+    public const int PipelineDepth = 8; // unacked frames in flight per stream
 
     public const byte KindSession = 1;
     public const byte KindData = 2;

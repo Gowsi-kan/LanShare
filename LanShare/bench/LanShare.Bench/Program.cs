@@ -2,22 +2,27 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Hashing;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using LanShare.Core;
 
 // LanShare loopback benchmark.
-//   dotnet run -c Release --project bench/LanShare.Bench -- [--size-mb 1024] [--small-count 20000]
-//        [--dir <workdir>] [--out results.json] [--baseline prev.json] [--tolerance 0.15] [--keep]
-// Exit codes: 0 ok, 1 verification failure, 2 regression vs baseline.
+//   dotnet run -c Release --project bench/LanShare.Bench -- [--size-mb 1024] [--small-count 20000] [--repeat 3]
+//        [--dir <workdir>] [--out results.json] [--baseline prev.json] [--tolerance 0.15] [--strict]
+//        [--only <scenario text>] [--quick] [--keep]
+// Exit codes: 0 ok, 1 verification failure, 2 regression (only when the baseline was recorded in the same environment, or --strict).
 
 int sizeMb = 1024,
-    smallCount = 20000;
+    smallCount = 20000,
+    repeat = 1;
 string? outPath = null,
     baselinePath = null,
-    dirArg = null;
+    dirArg = null,
+    only = null;
 double tolerance = 0.15;
-bool keep = false;
+bool keep = false,
+    strict = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -29,6 +34,13 @@ for (int i = 0; i < args.Length; i++)
         case "--small-count":
             smallCount = int.Parse(args[++i], CultureInfo.InvariantCulture);
             break;
+        case "--repeat":
+            repeat = Math.Max(1, int.Parse(args[++i], CultureInfo.InvariantCulture));
+            break;
+        case "--quick":
+            sizeMb = 256;
+            smallCount = 3000;
+            break;
         case "--out":
             outPath = args[++i];
             break;
@@ -38,15 +50,17 @@ for (int i = 0; i < args.Length; i++)
         case "--dir":
             dirArg = args[++i];
             break;
+        case "--only":
+            only = args[++i];
+            break;
         case "--tolerance":
             tolerance = double.Parse(args[++i], CultureInfo.InvariantCulture);
             break;
+        case "--strict":
+            strict = true;
+            break;
         case "--keep":
             keep = true;
-            break;
-        case "--quick":
-            sizeMb = 256;
-            smallCount = 3000;
             break;
         default:
             Console.Error.WriteLine($"Unknown argument {args[i]}");
@@ -61,7 +75,11 @@ var srcDir = Path.Combine(root, "src");
 var dstDir = Path.Combine(root, "dst");
 Directory.CreateDirectory(srcDir);
 
+Console.WriteLine(await SystemInfo.DescribeAsync(root));
 Console.WriteLine($"Work dir: {root}");
+Console.WriteLine($"Repeats per scenario: {repeat} (median reported)");
+Console.WriteLine();
+
 Console.WriteLine("Generating data...");
 var large = new List<(string Full, string Rel)>
 {
@@ -72,87 +90,127 @@ var text = new List<(string Full, string Rel)>
     Make("text.log", p => WriteText(p, sizeMb / 2 * 1024L * 1024)),
 };
 var small = MakeSmall(smallCount);
+var warm = new List<(string Full, string Rel)> { Make("warm.bin", p => WriteRandom(p, 4L << 20)) };
+
+Console.WriteLine("Flushing the generated data to disk...");
+await SettleDiskAsync([large[0].Full, text[0].Full]);
+
+var scenarios = new List<(string Name, List<(string Full, string Rel)> Files, SendOptions Opts)>();
+var senderSecurity = SecurityContext.CreateEphemeral();
+scenarios.Add(("large-random | 1 stream", large, new(1, false, null, senderSecurity)));
+scenarios.Add(("large-random | 4 streams", large, new(4, false, null, senderSecurity)));
+scenarios.Add(("large-random | auto-tune", large, new(0, false, null, senderSecurity)));
+scenarios.Add(("text | compress off", text, new(4, false, null, senderSecurity)));
+scenarios.Add(("text | compress on", text, new(4, true, null, senderSecurity)));
+scenarios.Add(($"small x{smallCount} | compress off", small, new(4, false, null, senderSecurity)));
+scenarios.Add(($"small x{smallCount} | compress on", small, new(4, true, null, senderSecurity)));
+if (only is not null)
+    scenarios = scenarios
+        .Where(s => s.Name.Contains(only, StringComparison.OrdinalIgnoreCase))
+        .ToList();
 
 await using var svc = new TransferService("bench", SecurityContext.CreateEphemeral());
-var senderSecurity = SecurityContext.CreateEphemeral();
-
-var scenarios = new List<(string Name, List<(string Full, string Rel)> Files, SendOptions Opts)>
-{
-    ("large-random | 1 stream", large, new(1, false, null, senderSecurity)),
-    ("large-random | 4 streams", large, new(4, false, null, senderSecurity)),
-    ("large-random | auto-tune", large, new(0, false, null, senderSecurity)),
-    ("text | compress off", text, new(4, false, null, senderSecurity)),
-    ("text | compress on", text, new(4, true, null, senderSecurity)),
-    ($"small x{smallCount} | compress off", small, new(4, false, null, senderSecurity)),
-    ($"small x{smallCount} | compress on", small, new(4, true, null, senderSecurity)),
-};
-
 string currentDst = dstDir;
-svc.IncomingOffer += job => job.Accept(currentDst);
+TransferState? lastReceiver = null;
+svc.IncomingOffer += job =>
+{
+    lastReceiver = job.State;
+    job.Accept(currentDst);
+};
 svc.Start();
+
+// warm-up: JIT, TLS and pairing happen here instead of inside the first measured scenario
+await RunOnceAsync(warm, new SendOptions(2, false, null, senderSecurity), verify: false);
 
 var results = new List<Result>();
 Console.WriteLine();
-Console.WriteLine($"{"scenario", -34} {"time", 8} {"MB/s", 9} {"files/s", 9} {"saved", 6}  verify");
+Console.WriteLine(
+    $"{"scenario", -34} {"time", 8} {"MB/s", 9} {"range", -13} {"files/s", 9} {"saved", 6}  verify"
+);
 
 foreach (var sc in scenarios)
 {
-    if (Directory.Exists(dstDir))
-        Directory.Delete(dstDir, true);
-    Directory.CreateDirectory(dstDir);
+    var secs = new List<double>();
+    bool allOk = true;
+    SenderSession? last = null;
+    string busy = "";
+    string error = "";
 
-    var session = new SenderSession(
-        new IPEndPoint(IPAddress.Loopback, svc.Port),
-        "bench",
-        sc.Files,
-        sc.Opts
-    );
-    var sw = Stopwatch.StartNew();
-    await session.RunAsync(CancellationToken.None);
-    sw.Stop();
+    for (int r = 0; r < repeat; r++)
+    {
+        var run = await RunOnceAsync(sc.Files, sc.Opts, verify: r == 0);
+        secs.Add(run.Seconds);
+        last = run.Session;
+        busy = Busy(run.Session.State, run.Receiver, run.Seconds, run.Peak);
+        if (!run.Ok)
+        {
+            allOk = false;
+            error = run.Session.State.Error ?? run.Session.State.Phase.ToString();
+            break;
+        }
+        await SettleDiskAsync();
+    }
 
-    bool ok = session.State.Phase == Phase.Completed && Verify(sc.Files, dstDir);
-    double secs = sw.Elapsed.TotalSeconds;
-    double mb = session.State.TotalBytes / 1_000_000.0;
-    var raw = session.State.SentRawBytes;
-    double saved = raw > 0 ? 100.0 * (1.0 - (double)session.State.SentWireBytes / raw) : 0;
-    var r = new Result(
+    double mb = last!.State.TotalBytes / 1_000_000.0;
+    double med = Median(secs);
+    double raw = last.State.SentRawBytes;
+    var res = new Result(
         sc.Name,
-        Math.Round(secs, 3),
-        Math.Round(mb / secs, 1),
-        Math.Round(sc.Files.Count / secs, 1),
-        Math.Round(saved, 1),
-        ok
+        Math.Round(med, 3),
+        Math.Round(mb / med, 1),
+        Math.Round(sc.Files.Count / med, 1),
+        Math.Round(raw > 0 ? 100.0 * (1.0 - last.State.SentWireBytes / raw) : 0, 1),
+        allOk,
+        Math.Round(mb / secs.Max(), 1),
+        Math.Round(mb / secs.Min(), 1),
+        busy
     );
-    results.Add(r);
+    results.Add(res);
+
+    var range = repeat > 1 ? $"{res.MinMBps:0}-{res.MaxMBps:0}" : "";
     Console.WriteLine(
-        $"{r.Name, -34} {r.Seconds, 7:0.00}s {r.MBps, 9:0.0} {r.FilesPerSec, 9:0.0} {r.SavedPct, 5:0}%  {(ok ? "OK" : "FAILED: " + session.State.Error)}"
+        $"{res.Name, -34} {res.Seconds, 7:0.00}s {res.MBps, 9:0.0} {range, -13} {res.FilesPerSec, 9:0.0} {res.SavedPct, 5:0}%  {(allOk ? "OK" : "FAILED: " + error)}"
     );
+    Console.WriteLine($"    busy: {busy}");
 }
+
+var envKey = EnvKey(root);
+int exit = results.All(r => r.Verified) ? 0 : 1;
 
 if (outPath is not null)
     File.WriteAllText(
         outPath,
-        JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true })
+        JsonSerializer.Serialize(
+            new BenchFile(envKey, DateTime.UtcNow.ToString("u"), results),
+            new JsonSerializerOptions { WriteIndented = true }
+        )
     );
-
-int exit = results.All(r => r.Verified) ? 0 : 1;
 
 if (baselinePath is not null && File.Exists(baselinePath))
 {
-    var baseline = JsonSerializer.Deserialize<List<Result>>(File.ReadAllText(baselinePath)) ?? [];
+    var (baseEnv, baseline) = LoadBaseline(baselinePath);
+    bool sameEnv = baseEnv == envKey;
     Console.WriteLine();
+    if (!sameEnv)
+        Console.WriteLine(
+            $"NOTE: the baseline was recorded under different conditions ({baseEnv ?? "unknown: old file format"}). "
+                + "Deltas are informational and do not fail the run. Save a new baseline here (scripts/bench-gate.sh --save), or use --strict."
+        );
+
     foreach (var r in results)
     {
         var b = baseline.FirstOrDefault(x => x.Name == r.Name);
         if (b is null || b.MBps <= 0)
             continue;
         double delta = r.MBps / b.MBps - 1;
-        bool regress = delta < -tolerance;
-        Console.WriteLine(
-            $"{r.Name, -34} {delta, 7:+0.0%;-0.0%}  {(regress ? "REGRESSION" : "ok")}"
-        );
-        if (regress && exit == 0)
+        bool slower = delta < -tolerance;
+        bool counts = sameEnv || strict;
+        var label =
+            !slower ? "ok"
+            : counts ? "REGRESSION"
+            : "slower (different environment)";
+        Console.WriteLine($"{r.Name, -34} {delta, 7:+0.0%;-0.0%}  {label}");
+        if (slower && counts && exit == 0)
             exit = 2;
     }
 }
@@ -168,6 +226,133 @@ if (!keep)
 return exit;
 
 // ---------------------------------------------------------------- helpers
+
+async Task<(
+    double Seconds,
+    bool Ok,
+    SenderSession Session,
+    TransferState? Receiver,
+    int Peak
+)> RunOnceAsync(List<(string Full, string Rel)> files, SendOptions opts, bool verify)
+{
+    if (Directory.Exists(dstDir))
+        Directory.Delete(dstDir, true);
+    Directory.CreateDirectory(dstDir);
+
+    var session = new SenderSession(
+        new IPEndPoint(IPAddress.Loopback, svc.Port),
+        "bench",
+        files,
+        opts
+    );
+    int peak = 1;
+    using var stop = new CancellationTokenSource();
+    var poll = Task.Run(async () =>
+    {
+        while (!stop.IsCancellationRequested)
+        {
+            peak = Math.Max(peak, session.State.ActiveStreams);
+            try
+            {
+                await Task.Delay(50, stop.Token);
+            }
+            catch (OperationCanceledException) { }
+        }
+    });
+
+    var sw = Stopwatch.StartNew();
+    await session.RunAsync(CancellationToken.None);
+    sw.Stop();
+    stop.Cancel();
+    await poll;
+
+    bool ok = session.State.Phase == Phase.Completed && (!verify || Verify(files, dstDir));
+    return (sw.Elapsed.TotalSeconds, ok, session, lastReceiver, peak);
+}
+
+static async Task SettleDiskAsync(IEnumerable<string>? bigFiles = null)
+{
+    try
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            using var p = Process.Start(
+                new ProcessStartInfo("sync") { UseShellExecute = false, CreateNoWindow = true }
+            );
+            if (p is not null)
+                await p.WaitForExitAsync();
+        }
+        else if (bigFiles is not null)
+        {
+            foreach (var f in bigFiles)
+            {
+                using var h = File.OpenHandle(
+                    f,
+                    FileMode.Open,
+                    FileAccess.Write,
+                    FileShare.ReadWrite
+                );
+                RandomAccess.FlushToDisk(h);
+            }
+        }
+    }
+    catch { }
+    await Task.Delay(500);
+}
+
+static string EnvKey(string workDir) =>
+    $"{RuntimeInformation.OSDescription} | {RuntimeInformation.OSArchitecture} | {Environment.ProcessorCount} cores | {Path.GetDirectoryName(workDir)}";
+
+static string Busy(TransferState sender, TransferState? receiver, double wallSeconds, int streams)
+{
+    string Top(TransferState s, params Stage[] stages)
+    {
+        var parts = stages
+            .Select(st =>
+                (
+                    Stage: st,
+                    Pct: 100
+                        * s.StageSeconds(st)
+                        / Math.Max(
+                            0.001,
+                            st is Stage.Prepare or Stage.Finalize or Stage.Persist
+                                ? wallSeconds
+                                : wallSeconds * streams
+                        )
+                )
+            )
+            .Where(x => x.Pct >= 8)
+            .OrderByDescending(x => x.Pct)
+            .Take(3)
+            .Select(x => $"{x.Stage} {x.Pct:0}%");
+        var text = string.Join(", ", parts);
+        return text.Length == 0 ? "-" : text;
+    }
+
+    return $"sender[{Top(sender, Stage.SourceRead, Stage.Hash, Stage.Compress, Stage.Send)}]"
+        + (
+            receiver is null
+                ? ""
+                : $" receiver[{Top(receiver, Stage.NetReceive, Stage.Hash, Stage.Decompress, Stage.Disk, Stage.Prepare, Stage.Finalize, Stage.Persist)}]"
+        );
+}
+
+static double Median(List<double> values)
+{
+    var s = values.OrderBy(x => x).ToList();
+    int n = s.Count;
+    return n % 2 == 1 ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+
+static (string? Env, List<Result> Results) LoadBaseline(string path)
+{
+    var json = File.ReadAllText(path);
+    using var doc = JsonDocument.Parse(json);
+    if (doc.RootElement.ValueKind == JsonValueKind.Array) // older file format: a bare list, no environment info
+        return (null, JsonSerializer.Deserialize<List<Result>>(json) ?? []);
+    var f = JsonSerializer.Deserialize<BenchFile>(json);
+    return (f?.Env, f?.Results ?? []);
+}
 
 (string Full, string Rel) Make(string name, Action<string> write)
 {
@@ -281,5 +466,10 @@ record Result(
     double MBps,
     double FilesPerSec,
     double SavedPct,
-    bool Verified
+    bool Verified,
+    double MinMBps = 0,
+    double MaxMBps = 0,
+    string Busy = ""
 );
+
+record BenchFile(string Env, string Created, List<Result> Results);

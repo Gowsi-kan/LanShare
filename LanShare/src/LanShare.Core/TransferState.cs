@@ -12,6 +12,9 @@ public enum Stage
     NetReceive,
     Decompress,
     Disk,
+    Prepare,
+    Finalize,
+    Persist,
 }
 
 /// <summary>Lock-free live state shared between transfer workers (writers) and the UI (reader).</summary>
@@ -46,7 +49,7 @@ public sealed class TransferState(long totalBytes, int totalFiles)
         set => Volatile.Write(ref _linkName, value);
     }
 
-    readonly long[] _stageTicks = new long[8];
+    readonly long[] _stageTicks = new long[16];
 
     /// <summary>Adds the time since <paramref name="startTimestamp"/> (Stopwatch.GetTimestamp()) to a stage.</summary>
     public void AddStage(Stage stage, long startTimestamp) =>

@@ -14,7 +14,7 @@ using Microsoft.Win32.SafeHandles;
 namespace LanShare.Core;
 
 /// <param name="Streams">Parallel data connections. 0 = auto-tune (starts at 2, adds streams until throughput plateaus, max 8).</param>
-/// <param name="Compress">Adaptive LZ4: tried per chunk, backs off automatically on incompressible data.</param>
+/// <param name="Compress">Adaptive LZ4: backs off when chunks are incompressible or compression costs more than it saves.</param>
 /// <param name="Limiter">Optional shared outgoing bandwidth limiter.</param>
 public sealed record SendOptions(
     int Streams = 0,
@@ -45,6 +45,7 @@ public sealed class SenderSession : IPausable
         public int RawLen,
             WireLen;
         public ulong Hash;
+        public long SendStarted;
         public long Key => ((long)Item.File << 32) | (uint)Item.Chunk;
     }
 
@@ -75,10 +76,35 @@ public sealed class SenderSession : IPausable
         }
     }
 
-    sealed class StreamCtx
+    sealed class StreamCtx : IDisposable
     {
         public int Acked;
         public readonly CompressionGate Gate = new();
+        SafeFileHandle? _sourceHandle;
+        int _sourceFile = -1;
+
+        public SafeFileHandle SourceHandle(int file, string path)
+        {
+            if (_sourceFile != file)
+            {
+                _sourceHandle?.Dispose();
+                _sourceHandle = null;
+                _sourceFile = -1;
+                var handle = File.OpenHandle(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    FileOptions.Asynchronous
+                );
+                _sourceHandle = handle;
+                _sourceFile = file;
+            }
+            return _sourceHandle
+                ?? throw new InvalidOperationException("Source handle was not initialized.");
+        }
+
+        public void Dispose() => _sourceHandle?.Dispose();
     }
 
     readonly IPEndPoint _remote;
@@ -93,11 +119,32 @@ public sealed class SenderSession : IPausable
     volatile Stream? _control;
 
     readonly SecurityContext _security;
+    int _compressionProbeTaken;
+    long _uncompressedAckBytes,
+        _uncompressedAckTicks;
+    int _uncompressedAckFrames;
     string _peerFp = "";
 
     public TransferState State { get; }
 
     string Tag => _id.ToString("N")[..6];
+
+    void RecordUncompressedAck(int bytes, long ticks)
+    {
+        Interlocked.Add(ref _uncompressedAckBytes, bytes);
+        Interlocked.Add(ref _uncompressedAckTicks, ticks);
+        Interlocked.Increment(ref _uncompressedAckFrames);
+    }
+
+    bool CompressionPays(int bytesSaved, long compressionTicks)
+    {
+        long sent = Interlocked.Read(ref _uncompressedAckBytes);
+        long elapsed = Interlocked.Read(ref _uncompressedAckTicks);
+        if (sent == 0 || elapsed == 0 || Volatile.Read(ref _uncompressedAckFrames) < 2)
+            return true;
+        double savedSendTicks = (double)bytesSaved * elapsed / sent;
+        return compressionTicks <= savedSendTicks * 0.25;
+    }
 
     public SenderSession(
         IPEndPoint remote,
@@ -441,7 +488,7 @@ public sealed class SenderSession : IPausable
                         await _gate.WaitAsync(pt);
                         var p = new Prepared { Item = item };
                         owned[p.Key] = p;
-                        await LoadAsync(p, bundles, ctx.Gate, pt);
+                        await LoadAsync(p, bundles, ctx, pt);
                         await prepared.Writer.WriteAsync(p, pt);
                     }
                     prepared.Writer.TryComplete();
@@ -462,6 +509,7 @@ public sealed class SenderSession : IPausable
                     await foreach (var p in prepared.Reader.ReadAllAsync(pt))
                     {
                         await _gate.WaitAsync(pt);
+                        p.SendStarted = Stopwatch.GetTimestamp();
                         if (_options.Limiter is { } lim)
                             await lim.WaitAsync(p.WireLen, pt);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr, p.Item.File);
@@ -469,9 +517,12 @@ public sealed class SenderSession : IPausable
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(8), p.RawLen);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(12), p.WireLen);
                         BinaryPrimitives.WriteUInt64LittleEndian(hdr.AsSpan(16), p.Hash);
+                        hdr.CopyTo(p.Data, 0);
                         long ts = Stopwatch.GetTimestamp();
-                        await ns.WriteAsync(hdr, pt);
-                        await ns.WriteAsync(p.Data.AsMemory(0, p.WireLen), pt);
+                        await ns.WriteAsync(
+                            p.Data.AsMemory(0, Protocol.DataHeaderSize + p.WireLen),
+                            pt
+                        );
                         State.AddStage(Stage.Send, ts);
                         await inflight.Writer.WriteAsync(p, pt);
                     }
@@ -507,6 +558,12 @@ public sealed class SenderSession : IPausable
                             }
                         }
 
+                        long ackTicks = Stopwatch.GetTimestamp() - ta;
+                        if (p.WireLen == p.RawLen)
+                            RecordUncompressedAck(
+                                p.RawLen,
+                                Stopwatch.GetTimestamp() - p.SendStarted
+                            );
                         State.AddStage(Stage.AckWait, ta);
                         owned.TryRemove(p.Key, out _);
                         if (ack[0] == Protocol.AckOk)
@@ -555,7 +612,7 @@ public sealed class SenderSession : IPausable
 
         async Task WorkerAsync()
         {
-            var ctx = new StreamCtx();
+            using var ctx = new StreamCtx();
             var token = lcts.Token;
             int failures = 0;
             try
@@ -686,11 +743,12 @@ public sealed class SenderSession : IPausable
     }
 
     /// <summary>Reads a chunk (or packs a bundle of small files) into a pooled buffer, hashes it, optionally LZ4-compresses it.</summary>
-    async Task LoadAsync(Prepared p, int[][] bundles, CompressionGate gate, CancellationToken ct)
+    async Task LoadAsync(Prepared p, int[][] bundles, StreamCtx ctx, CancellationToken ct)
     {
         int chunk = Protocol.ChunkSize;
-        var raw = ArrayPool<byte>.Shared.Rent(chunk);
+        var raw = ArrayPool<byte>.Shared.Rent(chunk + Protocol.DataHeaderSize);
         p.Data = raw;
+        int dataOffset = Protocol.DataHeaderSize;
         long t0 = Stopwatch.GetTimestamp();
         int len;
 
@@ -698,63 +756,69 @@ public sealed class SenderSession : IPausable
         {
             var entry = _entries[p.Item.File];
             len = ChunkMath.Length(entry.Size, chunk, p.Item.Chunk);
-            using var h = File.OpenHandle(
-                _files[p.Item.File].Full,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete,
-                FileOptions.Asynchronous
+            var h = ctx.SourceHandle(p.Item.File, _files[p.Item.File].Full);
+            await ReadFullyAsync(
+                h,
+                raw.AsMemory(dataOffset, len),
+                (long)p.Item.Chunk * chunk,
+                ct
             );
-            await ReadFullyAsync(h, raw.AsMemory(0, len), (long)p.Item.Chunk * chunk, ct);
         }
         else
         {
             var idxs = bundles[p.Item.Chunk];
-            int pos = 4 + 8 * idxs.Length;
-            BinaryPrimitives.WriteInt32LittleEndian(raw, idxs.Length);
+            int pos = dataOffset + 4 + 8 * idxs.Length;
+            BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(dataOffset), idxs.Length);
             for (int k = 0; k < idxs.Length; k++)
             {
                 var entry = _entries[idxs[k]];
-                BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(4 + 8 * k), idxs[k]);
-                BinaryPrimitives.WriteInt32LittleEndian(raw.AsSpan(8 + 8 * k), (int)entry.Size);
-                using var h = File.OpenHandle(
-                    _files[idxs[k]].Full,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete,
-                    FileOptions.Asynchronous
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    raw.AsSpan(dataOffset + 4 + 8 * k),
+                    idxs[k]
                 );
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    raw.AsSpan(dataOffset + 8 + 8 * k),
+                    (int)entry.Size
+                );
+                var h = ctx.SourceHandle(idxs[k], _files[idxs[k]].Full);
                 await ReadFullyAsync(h, raw.AsMemory(pos, (int)entry.Size), 0, ct);
                 pos += (int)entry.Size;
             }
-            len = pos;
+            len = pos - dataOffset;
         }
 
         State.AddStage(Stage.SourceRead, t0);
         p.RawLen = len;
         p.WireLen = len;
         long th = Stopwatch.GetTimestamp();
-        p.Hash = XxHash3.HashToUInt64(raw.AsSpan(0, len));
+        p.Hash = XxHash3.HashToUInt64(raw.AsSpan(dataOffset, len));
         State.AddStage(Stage.Hash, th);
 
-        if (_options.Compress && len >= 4096 && gate.ShouldTry())
+        if (_options.Compress && len >= 4096 && ctx.Gate.ShouldTry())
         {
+            if (Interlocked.CompareExchange(ref _compressionProbeTaken, 1, 0) == 0)
+                return;
+
             long tc = Stopwatch.GetTimestamp();
-            var c = ArrayPool<byte>.Shared.Rent(chunk);
+            var c = ArrayPool<byte>.Shared.Rent(chunk + Protocol.DataHeaderSize);
             int limit = len - len / 10; // only worth it if we save >= 10%
-            int n = LZ4Codec.Encode(raw.AsSpan(0, len), c.AsSpan(0, limit));
+            int n = LZ4Codec.Encode(
+                raw.AsSpan(dataOffset, len),
+                c.AsSpan(dataOffset, limit)
+            );
+            long compressionTicks = Stopwatch.GetTimestamp() - tc;
             State.AddStage(Stage.Compress, tc);
-            if (n > 0 && n < len)
+            if (n > 0 && n < len && CompressionPays(len - n, compressionTicks))
             {
                 ArrayPool<byte>.Shared.Return(raw);
                 p.Data = c;
                 p.WireLen = n;
-                gate.Report(true);
+                ctx.Gate.Report(true);
             }
             else
             {
                 ArrayPool<byte>.Shared.Return(c);
-                gate.Report(false);
+                ctx.Gate.Report(false);
             }
         }
     }
