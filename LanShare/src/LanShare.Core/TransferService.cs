@@ -249,7 +249,9 @@ public sealed class TransferService : IAsyncDisposable
 
             try
             {
+                long tPrepare = Stopwatch.GetTimestamp();
                 session = await Task.Run(() => ReceiverSession.Prepare(offer, dir, state), token);
+                state.AddStage(Stage.Prepare, tPrepare);
             }
             catch (InsufficientSpaceException e)
             {
@@ -288,7 +290,7 @@ public sealed class TransferService : IAsyncDisposable
                     break;
                 if (winner == peerGone)
                     throw new IOException("Sender disconnected.");
-                if (++persistTick % 5 == 0) // every ~10 s: each persist fsyncs, and fsync of a big file stalls its writes
+                if (++persistTick % 15 == 0) // every ~30 s: each persist fsyncs, and fsync of a big file stalls its writes
                     await Task.Run(
                         () => session.Persist(TimeSpan.FromSeconds(3)),
                         CancellationToken.None

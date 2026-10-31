@@ -60,16 +60,27 @@ internal static class NetInfo
         return result;
     }
 
-    internal static string Kind(NetworkInterfaceType t) =>
-        t switch
+    internal static string Kind(NetworkInterface nic)
+    {
+        var t = nic.NetworkInterfaceType;
+        if (t == NetworkInterfaceType.Wireless80211)
+            return "Wi-Fi";
+        if (
+            OperatingSystem.IsLinux()
+            && (
+                nic.Name.StartsWith("wl") || Directory.Exists($"/sys/class/net/{nic.Name}/wireless")
+            )
+        )
+            return "Wi-Fi";
+        return t switch
         {
-            NetworkInterfaceType.Wireless80211 => "Wi-Fi",
             NetworkInterfaceType.Ethernet
             or NetworkInterfaceType.GigabitEthernet
             or NetworkInterfaceType.FastEthernetT
             or NetworkInterfaceType.FastEthernetFx => "Ethernet (wired)",
             _ => t.ToString(),
         };
+    }
 
     /// <summary>"Ethernet (Realtek…) · Ethernet (wired) · 1 Gbps · 192.168.1.10" for the adapter that carries this connection.</summary>
     public static string DescribeLink(EndPoint? local)
@@ -82,7 +93,7 @@ internal static class NetInfo
             foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
             foreach (var ua in nic.GetIPProperties().UnicastAddresses)
                 if (ua.Address.Equals(addr))
-                    return $"{nic.Name} ({nic.Description}) · {Kind(nic.NetworkInterfaceType)} · "
+                    return $"{nic.Name} ({nic.Description}) · {Kind(nic)} · "
                         + $"{(nic.Speed > 0 ? Format.LinkRate(nic.Speed) : "speed unknown")} · {addr}";
         }
         catch (NetworkInformationException) { }

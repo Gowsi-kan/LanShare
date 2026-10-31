@@ -406,8 +406,20 @@ public sealed partial class TransferViewModel : ObservableObject
                 $"  compression: {Format.Bytes(s.SentWireBytes)} on the wire for {Format.Bytes(s.SentRawBytes)} of data"
             );
 
+        double wallOnly = Math.Max(0.001, wall);
         var stages = Enum.GetValues<Stage>()
-            .Select(st => (Stage: st, Pct: 100 * s.StageSeconds(st) / denom))
+            .Select(st =>
+                (
+                    Stage: st,
+                    Pct: 100
+                        * s.StageSeconds(st)
+                        / (
+                            st is Stage.Prepare or Stage.Finalize or Stage.Persist
+                                ? wallOnly
+                                : denom
+                        )
+                )
+            )
             .ToList();
         sb.AppendLine(
             "  stage busy % (of stream time): "
@@ -416,7 +428,7 @@ public sealed partial class TransferViewModel : ObservableObject
                     stages.Where(x => x.Pct >= 0.5).Select(x => $"{x.Stage} {x.Pct:0}")
                 )
         );
-        var top = stages.OrderByDescending(x => x.Pct).First();
+        var top = stages.Where(x => x.Stage != Stage.AckWait).OrderByDescending(x => x.Pct).First();
         if (top.Pct >= 5)
             sb.AppendLine($"  busiest stage: {top.Stage} -> {Hint(top.Stage)}");
         return sb.ToString().TrimEnd();
@@ -429,6 +441,9 @@ public sealed partial class TransferViewModel : ObservableObject
             Stage.AckWait => "waiting for the receiver (its disk or the network)",
             Stage.Disk => "the receiving disk",
             Stage.SourceRead => "the source disk",
+            Stage.Prepare => "receiver pre-allocating the file on disk",
+            Stage.Finalize => "receiver flushing the finished file to disk (disk write speed)",
+            Stage.Persist => "receiver saving resume state to disk",
             _ => "CPU (hash / compression)",
         };
 

@@ -59,7 +59,8 @@ public class TransferTests
     {
         await using var rig = new Rig();
         var text = new[] { rig.AddFile("text.log", 4L << 20, seed: 11, compressible: true) };
-        var st = rig.NewSession(text, rig.Options(compress: true));
+        var limiter = new RateLimiter { BytesPerSecond = 10L << 20 };
+        var st = rig.NewSession(text, rig.Options(compress: true, limiter: limiter));
         await rig.RunAsync(st, T);
         Assert.Equal(Phase.Completed, st.State.Phase);
         Assert.True(st.State.SentWireBytes < st.State.SentRawBytes * 0.8, "text should compress");

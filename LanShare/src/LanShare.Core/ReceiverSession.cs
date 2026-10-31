@@ -482,6 +482,7 @@ public sealed class ReceiverSession : IDisposable
 
     void FinalizeFile(FileState f)
     {
+        long t0 = Stopwatch.GetTimestamp();
         f.Finalized = true;
         var h = f.Handle!;
         RandomAccess.FlushToDisk(h);
@@ -489,11 +490,13 @@ public sealed class ReceiverSession : IDisposable
         File.Move(f.PartPath, UniquePath(f.FinalBase));
         TryDelete(f.StatePath);
         State.FileDone();
+        State.AddStage(Stage.Finalize, t0);
     }
 
     /// <summary>Flushes written data to disk, then atomically persists resume state (big-file bitmaps + small-file journal).</summary>
     public void Persist(TimeSpan? budget = null)
     {
+        long tPersist = Stopwatch.GetTimestamp();
         foreach (var f in _files)
         {
             if (f.Finalized || f.Handle is null || !f.Dirty)
@@ -526,6 +529,7 @@ public sealed class ReceiverSession : IDisposable
             }
         }
         PersistSmall(budget);
+        State.AddStage(Stage.Persist, tPersist);
     }
 
     void PersistSmall(TimeSpan? budget)
