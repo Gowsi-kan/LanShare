@@ -1,4 +1,18 @@
+using System.Diagnostics;
+
 namespace LanShare.Core;
+
+public enum Stage
+{
+    SourceRead,
+    Hash,
+    Compress,
+    Send,
+    AckWait,
+    NetReceive,
+    Decompress,
+    Disk,
+}
 
 /// <summary>Lock-free live state shared between transfer workers (writers) and the UI (reader).</summary>
 public sealed class TransferState(long totalBytes, int totalFiles)
@@ -24,6 +38,22 @@ public sealed class TransferState(long totalBytes, int totalFiles)
     public int Retries => Volatile.Read(ref _retries);
     int _pauseLocal,
         _pausePeer;
+
+    string _linkName = "";
+    public string LinkName
+    {
+        get => Volatile.Read(ref _linkName);
+        set => Volatile.Write(ref _linkName, value);
+    }
+
+    readonly long[] _stageTicks = new long[8];
+
+    /// <summary>Adds the time since <paramref name="startTimestamp"/> (Stopwatch.GetTimestamp()) to a stage.</summary>
+    public void AddStage(Stage stage, long startTimestamp) =>
+        Interlocked.Add(ref _stageTicks[(int)stage], Stopwatch.GetTimestamp() - startTimestamp);
+
+    public double StageSeconds(Stage stage) =>
+        Interlocked.Read(ref _stageTicks[(int)stage]) / (double)Stopwatch.Frequency;
 
     public long LinkBps
     {

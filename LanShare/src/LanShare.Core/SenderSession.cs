@@ -97,6 +97,8 @@ public sealed class SenderSession : IPausable
 
     public TransferState State { get; }
 
+    string Tag => _id.ToString("N")[..6];
+
     public SenderSession(
         IPEndPoint remote,
         string senderName,
@@ -137,6 +139,9 @@ public sealed class SenderSession : IPausable
     /// <summary>Never throws; outcome is reflected in <see cref="State"/>.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        DiagLog.Info(
+            $"[send {Tag}] start: {_files.Length} files, {Format.Bytes(State.TotalBytes)} to {_remote.Address}"
+        );
         try
         {
             await RunCoreAsync(ct);
@@ -160,6 +165,12 @@ public sealed class SenderSession : IPausable
         {
             State.Error = e.Message;
             State.Phase = Phase.Failed;
+        }
+        finally
+        {
+            DiagLog.Info(
+                $"[send {Tag}] ended: {State.Phase}{(string.IsNullOrEmpty(State.Error) ? "" : " — " + State.Error)}, retries {State.Retries}"
+            );
         }
     }
 
@@ -210,6 +221,9 @@ public sealed class SenderSession : IPausable
         _peerFp = peerFp;
         State.LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint);
 
+        State.LinkName = NetInfo.DescribeLink(sock.LocalEndPoint);
+        DiagLog.Info($"[send {Tag}] connected via {State.LinkName}");
+
         int initialStreams =
             _options.Streams > 0 ? Math.Clamp(_options.Streams, 1, 32) : InitialAutoStreams;
         await Wire.WriteHandshakeAsync(cs, Protocol.KindSession, ct);
@@ -243,6 +257,10 @@ public sealed class SenderSession : IPausable
                     throw new InvalidDataException("Bad resume map.");
             }
         }
+
+        DiagLog.Info(
+            $"[send {Tag}] accepted; streams={(_options.Streams > 0 ? _options.Streams.ToString() : "auto")} compress={_options.Compress}"
+        );
 
         // ---- build the work queue: big files -> chunks, small files -> packed bundles ----
         var queue = Channel.CreateUnbounded<WorkItem>(
@@ -451,8 +469,10 @@ public sealed class SenderSession : IPausable
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(8), p.RawLen);
                         BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(12), p.WireLen);
                         BinaryPrimitives.WriteUInt64LittleEndian(hdr.AsSpan(16), p.Hash);
+                        long ts = Stopwatch.GetTimestamp();
                         await ns.WriteAsync(hdr, pt);
                         await ns.WriteAsync(p.Data.AsMemory(0, p.WireLen), pt);
+                        State.AddStage(Stage.Send, ts);
                         await inflight.Writer.WriteAsync(p, pt);
                     }
                     inflight.Writer.TryComplete();
@@ -473,6 +493,7 @@ public sealed class SenderSession : IPausable
                 {
                     await foreach (var p in inflight.Reader.ReadAllAsync(pt))
                     {
+                        long ta = Stopwatch.GetTimestamp();
                         using (var tcts = CancellationTokenSource.CreateLinkedTokenSource(pt))
                         {
                             tcts.CancelAfter(TimeSpan.FromSeconds(AckTimeoutSeconds));
@@ -485,6 +506,8 @@ public sealed class SenderSession : IPausable
                                 throw new IOException("Receiver stopped acknowledging (stalled).");
                             }
                         }
+
+                        State.AddStage(Stage.AckWait, ta);
                         owned.TryRemove(p.Key, out _);
                         if (ack[0] == Protocol.AckOk)
                         {
@@ -494,6 +517,7 @@ public sealed class SenderSession : IPausable
                         }
                         else
                         {
+                            DiagLog.Warn($"[send {Tag}] receiver rejected a chunk (checksum)");
                             State.Retry();
                             if (++badInRow > MaxConsecutiveFailures)
                                 throw new InvalidDataException("Repeated checksum failures.");
@@ -556,6 +580,9 @@ public sealed class SenderSession : IPausable
                                     or ObjectDisposedException
                         )
                     {
+                        DiagLog.Warn(
+                            $"[send {Tag}] stream error: {ex.GetType().Name}: {ex.Message}"
+                        );
                         State.Retry();
                         if (Volatile.Read(ref ctx.Acked) > ackedBefore)
                             failures = 0;
@@ -627,6 +654,9 @@ public sealed class SenderSession : IPausable
                 {
                     StartWorker();
                     count++;
+                    DiagLog.Info(
+                        $"[send {Tag}] auto-tune: now {count} streams (was {Format.Rate(prev)})"
+                    );
                     if (!await SleepAsync(1000, token))
                         return;
                     double now = await MeasureAsync(2000, token);
@@ -661,6 +691,7 @@ public sealed class SenderSession : IPausable
         int chunk = Protocol.ChunkSize;
         var raw = ArrayPool<byte>.Shared.Rent(chunk);
         p.Data = raw;
+        long t0 = Stopwatch.GetTimestamp();
         int len;
 
         if (p.Item.File >= 0)
@@ -699,15 +730,20 @@ public sealed class SenderSession : IPausable
             len = pos;
         }
 
+        State.AddStage(Stage.SourceRead, t0);
         p.RawLen = len;
         p.WireLen = len;
+        long th = Stopwatch.GetTimestamp();
         p.Hash = XxHash3.HashToUInt64(raw.AsSpan(0, len));
+        State.AddStage(Stage.Hash, th);
 
         if (_options.Compress && len >= 4096 && gate.ShouldTry())
         {
+            long tc = Stopwatch.GetTimestamp();
             var c = ArrayPool<byte>.Shared.Rent(chunk);
             int limit = len - len / 10; // only worth it if we save >= 10%
             int n = LZ4Codec.Encode(raw.AsSpan(0, len), c.AsSpan(0, limit));
+            State.AddStage(Stage.Compress, tc);
             if (n > 0 && n < len)
             {
                 ArrayPool<byte>.Shared.Return(raw);

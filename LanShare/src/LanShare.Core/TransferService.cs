@@ -129,6 +129,7 @@ public sealed class TransferService : IAsyncDisposable
 
     async Task HandleConnectionAsync(Socket sock, CancellationToken ct)
     {
+        var who = sock.RemoteEndPoint?.ToString() ?? "?";
         try
         {
             SocketTuning.Apply(sock);
@@ -152,7 +153,7 @@ public sealed class TransferService : IAsyncDisposable
         }
         catch (Exception e)
         {
-            Trace.TraceWarning($"Connection error: {e.Message}");
+            DiagLog.Warn($"Connection from {who} failed: {e.GetType().Name}: {e.Message}");
         }
     }
 
@@ -193,8 +194,9 @@ public sealed class TransferService : IAsyncDisposable
                 serviceCt
             );
         }
-        catch (PairingRejectedException)
+        catch (PairingRejectedException e)
         {
+            DiagLog.Info($"Pairing with {remote} failed: {e.Message}");
             return;
         }
 
@@ -205,8 +207,13 @@ public sealed class TransferService : IAsyncDisposable
         {
             Phase = Phase.AwaitingYou,
             LinkBps = NetInfo.LinkBitsPerSecond(sock.LocalEndPoint),
+            LinkName = NetInfo.DescribeLink(sock.LocalEndPoint),
         };
         var job = new IncomingJob(offer, $"{peerName} ({remote})", state);
+
+        DiagLog.Info(
+            $"Incoming offer from {peerName} ({remote}): {offer.Files.Count} files, {Format.Bytes(offer.TotalBytes)}"
+        );
 
         job.ControlSender = b => SendControlAsync(ns, job, b);
 
@@ -271,6 +278,7 @@ public sealed class TransferService : IAsyncDisposable
             long lastChange = Stopwatch.GetTimestamp();
             long lastStreams = lastChange;
 
+            int persistTick = 0;
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
             while (true)
             {
@@ -280,10 +288,11 @@ public sealed class TransferService : IAsyncDisposable
                     break;
                 if (winner == peerGone)
                     throw new IOException("Sender disconnected.");
-                await Task.Run(
-                    () => session.Persist(TimeSpan.FromSeconds(1.5)),
-                    CancellationToken.None
-                );
+                if (++persistTick % 5 == 0) // every ~10 s: each persist fsyncs, and fsync of a big file stalls its writes
+                    await Task.Run(
+                        () => session.Persist(TimeSpan.FromSeconds(3)),
+                        CancellationToken.None
+                    );
 
                 // watchdogs: a sender that is alive on the control connection but never delivers must not hang us forever
                 long nowTs = Stopwatch.GetTimestamp();
@@ -332,6 +341,9 @@ public sealed class TransferService : IAsyncDisposable
         }
         finally
         {
+            DiagLog.Info(
+                $"Incoming session ended: {state.Phase}{(string.IsNullOrEmpty(state.Error) ? "" : " — " + state.Error)}"
+            );
             _sessions.TryRemove(offer.SessionId, out _);
             session?.Dispose();
             cts.Cancel();

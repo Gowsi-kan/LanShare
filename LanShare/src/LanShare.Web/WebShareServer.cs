@@ -145,6 +145,8 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             _app = await BuildAndStartAsync(free, httpsCert);
             Port = free;
         }
+
+        DiagLog.Info($"Phone access started: port {Port}, https={UseHttps}");
     }
 
     async Task<WebApplication> BuildAndStartAsync(int port, X509Certificate2? cert)
@@ -186,6 +188,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
     {
         var app = _app;
         _app = null;
+        DiagLog.Info("Phone access stopped");
 
         _sessions.Clear();
         _approvals.Clear();
@@ -340,6 +343,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
                 if (!PinOk(pin))
                 {
+                    DiagLog.Warn($"Phone login: wrong PIN from {ip}");
                     RegisterFailure(ip);
                     return Results.Json(
                         new { error = "Wrong PIN" },
@@ -347,6 +351,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                     );
                 }
                 _failures.TryRemove(ip, out _);
+                DiagLog.Info($"Phone login OK from {ip}");
                 var session = NewToken();
                 _sessions[session] = new SessionInfo(ip, DateTime.UtcNow);
                 return Results.Json(new { session });
@@ -552,7 +557,12 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                 }
             }
             if (state is not null && pos >= size)
+            {
                 state.Phase = Phase.Completed;
+                DiagLog.Info(
+                    $"Phone download finished: {Format.Bytes(size)} to {ctx.Connection.RemoteIpAddress}"
+                );
+            }
         }
         catch (Exception e)
             when (e
@@ -762,6 +772,9 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
                         received += seg.Length;
                         state.AddBytes(seg.Length);
                         state.CurrentFile = q.Name;
+                        DiagLog.Info(
+                            $"Phone upload finished: {Format.Bytes(q.Size)} from {slot.Upload.Peer}"
+                        );
                     }
                     reader.AdvanceTo(buf.End);
                     if (r.IsCompleted)
@@ -781,6 +794,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             File.Move(slot.Part, finalPath);
             state.CurrentFile = Path.GetFileName(finalPath);
             state.Phase = Phase.Completed;
+            DiagLog.Info($"Phone upload finished: {Format.Bytes(q.Size)} from {slot.Upload.Peer}");
             lock (_slotsGate)
                 _slots.Remove(q.Key);
             return Results.Json(new { done = true, name = Path.GetFileName(finalPath) });
@@ -866,6 +880,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
 
     void Fail(string key, UploadSlot slot, string message)
     {
+        DiagLog.Warn($"Phone upload failed: {message}");
         slot.Upload.State.Error = message;
         slot.Upload.State.Phase = Phase.Failed;
         lock (_slotsGate)
@@ -1054,6 +1069,9 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             }
         }
         ap.State = ok ? 1 : 2;
+        DiagLog.Info(
+            $"Phone upload request from {ap.Ip}: {(ok ? "approved" : "declined")} ({ap.Request.Files.Count} files)"
+        );
     }
 
     void PruneApprovals()

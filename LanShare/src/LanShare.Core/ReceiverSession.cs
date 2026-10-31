@@ -109,6 +109,9 @@ public sealed class ReceiverSession : IDisposable
         }
 
         long free = FreeSpace(rootFull);
+        DiagLog.Info(
+            $"Receiver prepare: {files.Length} files, need {Format.Bytes(needed)}, free {Format.Bytes(free)}"
+        );
         if (needed + (64L << 20) > free)
             throw new InsufficientSpaceException(needed, free);
 
@@ -252,9 +255,11 @@ public sealed class ReceiverSession : IDisposable
         {
             while (true)
             {
+                long tn = Stopwatch.GetTimestamp();
                 if (await ns.ReadAsync(hdr.AsMemory(0, 1), ct) == 0)
                     break;
                 await ns.ReadExactlyAsync(hdr.AsMemory(1), ct);
+                State.AddStage(Stage.NetReceive, tn);
 
                 int fi = BinaryPrimitives.ReadInt32LittleEndian(hdr);
                 int ci = BinaryPrimitives.ReadInt32LittleEndian(hdr.AsSpan(4));
@@ -310,10 +315,12 @@ public sealed class ReceiverSession : IDisposable
                     else
                     {
                         scratch ??= ArrayPool<byte>.Shared.Rent(_offer.ChunkSize);
+                        long td = Stopwatch.GetTimestamp();
                         int n = LZ4Codec.Decode(
                             f.Buf.AsSpan(0, f.WireLen),
                             scratch.AsSpan(0, f.RawLen)
                         );
+                        State.AddStage(Stage.Decompress, td);
                         if (n != f.RawLen)
                         {
                             ack[0] = Protocol.AckBad;
@@ -353,10 +360,15 @@ public sealed class ReceiverSession : IDisposable
     {
         if (f.Finalized)
             return true; // duplicate of an already-acked chunk
-        if (XxHash3.HashToUInt64(data.Span) != hash)
+        long th = Stopwatch.GetTimestamp();
+        bool hashOk = XxHash3.HashToUInt64(data.Span) == hash;
+        State.AddStage(Stage.Hash, th);
+        if (!hashOk)
             return false;
 
+        long tw = Stopwatch.GetTimestamp();
         await RandomAccess.WriteAsync(f.Handle!, data, (long)ci * _offer.ChunkSize, ct);
+        State.AddStage(Stage.Disk, tw);
 
         bool first;
         lock (f.Gate)

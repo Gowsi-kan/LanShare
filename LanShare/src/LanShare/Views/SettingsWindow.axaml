@@ -5,7 +5,7 @@
     xmlns:vm="using:LanShare.ViewModels"
     Title="Settings"
     Width="900"
-    Height="560"
+    Height="580"
     x:DataType="vm:MainViewModel"
     Background="#0E1014"
     CanResize="False"
@@ -48,39 +48,63 @@
                 ColumnDefinitions="420,*"
                 ColumnSpacing="12">
 
-                <StackPanel Spacing="12">
-                    <Border Padding="14,12" Classes="card">
-                        <StackPanel Spacing="8">
-                            <TextBlock Classes="lbl" Text="BACKGROUND" />
-                            <CheckBox Content="Run in background (system tray)" IsChecked="{Binding RunInBackground}" />
-                            <TextBlock
-                                Classes="muted"
-                                Text="Minimize and Close hide the window and LanShare keeps receiving. Use the tray icon to open or quit."
-                                TextWrapping="Wrap" />
-                            <CheckBox Content="Desktop notifications" IsChecked="{Binding NotificationsEnabled}" />
-                            <TextBlock
-                                Classes="muted"
-                                Text="Pop-up when a file arrives, a transfer finishes or fails, while the window is hidden or unfocused."
-                                TextWrapping="Wrap" />
-                            <CheckBox Content="Start with Windows / Linux login" IsChecked="{Binding StartWithSystem}" />
-                            <TextBlock
-                                Classes="muted"
-                                Text="Starts hidden in the tray. Works for the published app, not for 'dotnet run'."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+                <ScrollViewer Padding="0,0,10,0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12">
 
-                    <Border Padding="14,12" Classes="card">
-                        <StackPanel Spacing="8">
-                            <TextBlock Classes="lbl" Text="FILE MANAGER" />
-                            <CheckBox Content="Right-click menu: Send with LanShare" IsChecked="{Binding ContextMenuEnabled}" />
-                            <TextBlock
-                                Classes="muted"
-                                Text="Windows: right-click files or folders (Windows 11: Show more options). Linux: Files, Nemo and Dolphin, plus Open With."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+                        <Border Padding="14,12" Classes="card">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="lbl" Text="BACKGROUND" />
+                                <CheckBox
+                                    Content="Run in background (system tray)"
+                                    IsChecked="{Binding RunInBackground}"
+                                    ToolTip.Tip="Minimize and Close hide the window; LanShare keeps receiving. Quit from the tray icon." />
+                                <CheckBox
+                                    Content="Desktop notifications"
+                                    IsChecked="{Binding NotificationsEnabled}"
+                                    ToolTip.Tip="Pop-up when a file arrives or a transfer finishes or fails while the window is hidden." />
+                                <CheckBox
+                                    Content="Start with Windows / Linux login"
+                                    IsChecked="{Binding StartWithSystem}"
+                                    ToolTip.Tip="Starts hidden in the tray. Works for the published app, not for 'dotnet run'." />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Padding="14,12" Classes="card">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="lbl" Text="FILE MANAGER" />
+                                <CheckBox Content="Right-click menu: Send with LanShare" IsChecked="{Binding ContextMenuEnabled}" />
+                                <TextBlock Classes="muted" Text="Windows 11: under “Show more options”." />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Padding="14,12" Classes="card">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="lbl" Text="DIAGNOSTICS" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        x:Name="CopyDiagBtn"
+                                        Classes="primary small"
+                                        Click="OnCopyDiagnostics"
+                                        Content="Copy diagnostics" />
+                                    <Button
+                                        Classes="ghost small"
+                                        Click="OnOpenLogs"
+                                        Content="Open log folder" />
+                                </StackPanel>
+                                <TextBlock
+                                    Classes="muted"
+                                    FontSize="11"
+                                    Text="{Binding LogFolderText}"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Classes="muted"
+                                    FontSize="11"
+                                    Text="{Binding BuildStamp}" />
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
 
                 <Border
                     Grid.Column="1"

@@ -128,6 +128,7 @@ internal static class SecurityHandshake
             throw new PairingRejectedException("Too many pairing requests.");
         try
         {
+            DiagLog.Info($"Pairing started with {peerName} ({peerAddress})");
             pairing?.Invoke(true);
             var code = SecurityContext.PairingCode(myFp, peerFp);
 
@@ -171,6 +172,7 @@ internal static class SecurityHandshake
                 throw new PairingRejectedException("The other device cancelled pairing.");
 
             sec.Trust.Add(peerFp, peerName, peerAddress);
+            DiagLog.Info($"Paired with {peerName}");
             return peerName;
         }
         finally

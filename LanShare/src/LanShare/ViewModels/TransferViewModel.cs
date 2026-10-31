@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -29,11 +30,14 @@ public sealed partial class TransferViewModel : ObservableObject
     long _startTs,
         _lastTs,
         _startBytes,
+        _endTs,
         _lastBytes;
     double _speed,
         _elapsed;
     bool _frozen,
         _final;
+
+    int _peakStreams;
 
     public SendPlan? Plan { get; private init; }
     public bool IsIncoming => _job is not null || (_web && !_webDownload);
@@ -94,6 +98,9 @@ public sealed partial class TransferViewModel : ObservableObject
 
     [ObservableProperty]
     bool _canResume;
+
+    [ObservableProperty]
+    string _diagText = "";
 
     TransferViewModel(
         MainViewModel owner,
@@ -173,6 +180,8 @@ public sealed partial class TransferViewModel : ObservableObject
     {
         if (_final)
             return; // finished transfers need no further UI work
+
+        _peakStreams = Math.Max(_peakStreams, _state.ActiveStreams);
         var s = _state;
         var phase = s.Phase;
         long done = s.DoneBytes,
@@ -215,6 +224,36 @@ public sealed partial class TransferViewModel : ObservableObject
         }
 
         bool live = phase == Phase.Transferring;
+        if (live && _startTs != 0)
+        {
+            double wall =
+                Stopwatch.GetElapsedTime(_startTs, now).TotalSeconds * Math.Max(1, s.ActiveStreams);
+            if (wall > 3)
+            {
+                double Pct(Stage st) => 100 * s.StageSeconds(st) / wall;
+                var parts = new (string Name, double Pct)[]
+                {
+                    ("source read", Pct(Stage.SourceRead)),
+                    ("hash", Pct(Stage.Hash)),
+                    ("compress", Pct(Stage.Compress)),
+                    ("network+TLS send", Pct(Stage.Send)),
+                    ("waiting for acks", Pct(Stage.AckWait)),
+                    ("receiving", Pct(Stage.NetReceive)),
+                    ("decompress", Pct(Stage.Decompress)),
+                    ("disk write", Pct(Stage.Disk)),
+                };
+                DiagText =
+                    "Busy: "
+                    + string.Join(
+                        " · ",
+                        parts
+                            .Where(p => p.Pct >= 5)
+                            .OrderByDescending(p => p.Pct)
+                            .Take(4)
+                            .Select(p => $"{p.Name} {p.Pct:0}%")
+                    );
+            }
+        }
         Percent =
             total == 0 ? (phase == Phase.Completed ? 100 : 0) : Math.Min(100, done * 100.0 / total);
         Transferred = $"{Format.Bytes(done)} / {Format.Bytes(total)}";
@@ -283,6 +322,7 @@ public sealed partial class TransferViewModel : ObservableObject
         CanResume = _pausable is not null && phase == Phase.Paused;
         if (IsFinished && !_final)
         {
+            _endTs = now;
             _final = true;
             Finished?.Invoke(this);
         }
@@ -324,5 +364,85 @@ public sealed partial class TransferViewModel : ObservableObject
             Process.Start(new ProcessStartInfo(_owner.DownloadDir) { UseShellExecute = true });
         }
         catch { }
+    }
+
+    public string Report()
+    {
+        var s = _state;
+        long done = s.DoneBytes;
+        double wall =
+            _startTs == 0
+                ? 0
+                : Stopwatch
+                    .GetElapsedTime(_startTs, _endTs != 0 ? _endTs : Stopwatch.GetTimestamp())
+                    .TotalSeconds;
+        double avg = wall > 0 ? (done - _startBytes) / wall : 0;
+        int streams = Math.Max(1, Math.Max(_peakStreams, s.ActiveStreams));
+        double denom = Math.Max(0.001, wall * streams);
+        var kind =
+            _web ? (_webDownload ? "phone download (PC to phone)" : "phone upload (phone to PC)")
+            : IsIncoming ? "receive (this PC is receiving)"
+            : "send (this PC is sending)";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"[{kind}] {Subtitle}");
+        sb.AppendLine(
+            $"  result: {s.Phase}{(string.IsNullOrEmpty(s.Error) ? "" : " — " + s.Error)}"
+        );
+        sb.AppendLine(
+            $"  data: {Format.Bytes(done)} of {Format.Bytes(s.TotalBytes)} · files {s.FilesDone}/{s.TotalFiles}"
+        );
+        sb.AppendLine(
+            $"  time: {wall:0.0} s · average {Format.Rate(avg)} · latest {Format.Rate(SpeedBytesPerSec)}"
+        );
+        sb.AppendLine(
+            $"  link: {(s.LinkName.Length > 0 ? s.LinkName : "unknown")} · using "
+                + (s.LinkBps > 0 ? $"{Math.Min(999, avg * 8 / s.LinkBps * 100):0}%" : "n/a")
+                + " of the negotiated speed"
+        );
+        sb.AppendLine($"  streams: peak {_peakStreams} · retries {s.Retries}");
+        if (s.SentRawBytes > 0)
+            sb.AppendLine(
+                $"  compression: {Format.Bytes(s.SentWireBytes)} on the wire for {Format.Bytes(s.SentRawBytes)} of data"
+            );
+
+        var stages = Enum.GetValues<Stage>()
+            .Select(st => (Stage: st, Pct: 100 * s.StageSeconds(st) / denom))
+            .ToList();
+        sb.AppendLine(
+            "  stage busy % (of stream time): "
+                + string.Join(
+                    ", ",
+                    stages.Where(x => x.Pct >= 0.5).Select(x => $"{x.Stage} {x.Pct:0}")
+                )
+        );
+        var top = stages.OrderByDescending(x => x.Pct).First();
+        if (top.Pct >= 5)
+            sb.AppendLine($"  busiest stage: {top.Stage} -> {Hint(top.Stage)}");
+        return sb.ToString().TrimEnd();
+    }
+
+    static string Hint(Stage st) =>
+        st switch
+        {
+            Stage.Send or Stage.NetReceive => "network or encryption",
+            Stage.AckWait => "waiting for the receiver (its disk or the network)",
+            Stage.Disk => "the receiving disk",
+            Stage.SourceRead => "the source disk",
+            _ => "CPU (hash / compression)",
+        };
+
+    public async Task<string> BuildDetailsAsync()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(await SystemInfo.DescribeAsync(_owner.DownloadDir));
+        if (Plan is { Files.Count: > 0 } plan)
+            sb.AppendLine("Source disk: " + await SystemInfo.DescribeDiskAsync(plan.Files[0].Full));
+        sb.AppendLine();
+        sb.AppendLine(Report());
+        sb.AppendLine();
+        sb.AppendLine("Recent log:");
+        sb.AppendLine(DiagLog.Recent(60));
+        return sb.ToString();
     }
 }

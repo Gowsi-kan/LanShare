@@ -59,6 +59,35 @@ internal static class NetInfo
         catch (NetworkInformationException) { }
         return result;
     }
+
+    internal static string Kind(NetworkInterfaceType t) =>
+        t switch
+        {
+            NetworkInterfaceType.Wireless80211 => "Wi-Fi",
+            NetworkInterfaceType.Ethernet
+            or NetworkInterfaceType.GigabitEthernet
+            or NetworkInterfaceType.FastEthernetT
+            or NetworkInterfaceType.FastEthernetFx => "Ethernet (wired)",
+            _ => t.ToString(),
+        };
+
+    /// <summary>"Ethernet (Realtek…) · Ethernet (wired) · 1 Gbps · 192.168.1.10" for the adapter that carries this connection.</summary>
+    public static string DescribeLink(EndPoint? local)
+    {
+        if (local is not IPEndPoint ep)
+            return "unknown";
+        var addr = Normalize(ep.Address);
+        try
+        {
+            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+            foreach (var ua in nic.GetIPProperties().UnicastAddresses)
+                if (ua.Address.Equals(addr))
+                    return $"{nic.Name} ({nic.Description}) · {Kind(nic.NetworkInterfaceType)} · "
+                        + $"{(nic.Speed > 0 ? Format.LinkRate(nic.Speed) : "speed unknown")} · {addr}";
+        }
+        catch (NetworkInformationException) { }
+        return addr.ToString();
+    }
 }
 
 internal static class SocketTuning
@@ -68,8 +97,11 @@ internal static class SocketTuning
         try
         {
             s.NoDelay = true;
-            s.SendBufferSize = 4 * 1024 * 1024;
-            s.ReceiveBufferSize = 4 * 1024 * 1024;
+            if (OperatingSystem.IsWindows())
+            {
+                s.SendBufferSize = 4 * 1024 * 1024;
+                s.ReceiveBufferSize = 4 * 1024 * 1024;
+            }
             s.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             s.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 10);
             s.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 3);

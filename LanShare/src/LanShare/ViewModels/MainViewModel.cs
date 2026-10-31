@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -508,6 +509,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     void OnTransferFinished(TransferViewModel t)
     {
+        DiagLog.Info("Transfer finished: " + t.Report().Replace(Environment.NewLine, " | "));
         if (IsWindowActive())
             return; // the user is looking at the window
         switch (t.FinalPhase)
@@ -586,6 +588,55 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             ' ',
             Enumerable.Range(0, s.Length / 4).Select(i => s.Substring(i * 4, 4))
         );
+    }
+
+    public async Task<string> BuildDiagnosticsAsync()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(await SystemInfo.DescribeAsync(DownloadDir));
+        sb.AppendLine();
+        sb.AppendLine("Settings:");
+        sb.AppendLine(
+            $"  streams={(StreamsSetting < 0.5 ? "auto" : ((int)Math.Round(StreamsSetting)).ToString())}"
+                + $" compression={CompressionEnabled} limit={BandwidthOptions[Math.Clamp(BandwidthIndex, 0, BandwidthOptions.Count - 1)]}"
+                + $" autoAccept={AutoAccept} tray={RunInBackground}"
+        );
+        sb.AppendLine(
+            $"  trusted devices: {TrustedDevices.Count} · discovered devices: {Peers.Count} · phone access: {(Phone.IsRunning ? "on" : "off")}"
+        );
+        sb.AppendLine();
+        sb.AppendLine("Transfers in the window (newest first, file names left out):");
+        foreach (var t in Transfers.Take(10))
+            sb.AppendLine(t.Report()).AppendLine();
+        sb.AppendLine("Recent log:");
+        sb.AppendLine(DiagLog.Recent(200));
+        return sb.ToString();
+    }
+
+    public string BuildStamp => BuildInfo.Stamp;
+
+    public string LogFolderText =>
+        DiagLog.LogDirectory is { } d
+            ? $"Logs: {d}"
+            : "Logging is unavailable: the log folder could not be created.";
+
+    public void OpenLogFolder()
+    {
+        try
+        {
+            var d = DiagLog.LogDirectory;
+            if (d is null)
+            {
+                StatusMessage = "Logging is unavailable: the log folder could not be created.";
+                return;
+            }
+            Directory.CreateDirectory(d);
+            Process.Start(new ProcessStartInfo(d) { UseShellExecute = true });
+        }
+        catch (Exception e)
+        {
+            StatusMessage = e.Message;
+        }
     }
 
     public void Dispose()
