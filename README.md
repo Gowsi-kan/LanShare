@@ -11,6 +11,7 @@ Transfers happen over the local network: there is no cloud relay or account requ
 ## Features
 
 - Discover other LanShare computers on the LAN, or connect by entering an IP address.
+- Queue files and folders before choosing a peer, then send them once a device is selected.
 - Send files and folders over an encrypted, authenticated connection. Devices pair by comparing a short code; trusted device fingerprints are saved for future transfers.
 - Resume interrupted computer-to-computer transfers using per-file chunk state.
 - Bundle small files, use parallel streams, and optionally compress data with adaptive LZ4.
