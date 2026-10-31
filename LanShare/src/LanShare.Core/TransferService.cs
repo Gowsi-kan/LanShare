@@ -6,6 +6,15 @@ using System.Net.Sockets;
 
 namespace LanShare.Core;
 
+public enum ConflictHandling
+{
+    Rename,
+    KeepExisting,
+    Replace,
+}
+
+internal sealed record IncomingDecision(string SaveDirectory, ConflictHandling ConflictHandling);
+
 public sealed class IncomingJob(Offer offer, string peer, TransferState state) : IPausable
 {
     public Offer Offer { get; } = offer;
@@ -15,11 +24,12 @@ public sealed class IncomingJob(Offer offer, string peer, TransferState state) :
     internal Func<byte, Task>? ControlSender { get; set; }
     internal SemaphoreSlim ControlWriteGate { get; } = new(1, 1);
 
-    internal TaskCompletionSource<string?> Decision { get; } =
+    internal TaskCompletionSource<IncomingDecision?> Decision { get; } =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource Cts { get; } = new();
 
-    public void Accept(string saveDir) => Decision.TrySetResult(saveDir);
+    public void Accept(string saveDir, ConflictHandling conflictHandling = ConflictHandling.Rename) =>
+        Decision.TrySetResult(new IncomingDecision(saveDir, conflictHandling));
 
     public void Decline() => Decision.TrySetResult(null);
 
@@ -239,8 +249,8 @@ public sealed class TransferService : IAsyncDisposable
                 return;
             }
 
-            var dir = first == job.Decision.Task ? await job.Decision.Task : null;
-            if (dir is null)
+            var decision = first == job.Decision.Task ? await job.Decision.Task : null;
+            if (decision is null)
             {
                 await Wire.WriteFrameAsync(ns, w => w.Write((byte)Decision.Decline), token);
                 state.Phase = Phase.Declined;
@@ -250,7 +260,16 @@ public sealed class TransferService : IAsyncDisposable
             try
             {
                 long tPrepare = Stopwatch.GetTimestamp();
-                session = await Task.Run(() => ReceiverSession.Prepare(offer, dir, state), token);
+                session = await Task.Run(
+                    () =>
+                        ReceiverSession.Prepare(
+                            offer,
+                            decision.SaveDirectory,
+                            state,
+                            decision.ConflictHandling
+                        ),
+                    token
+                );
                 state.AddStage(Stage.Prepare, tPrepare);
             }
             catch (InsufficientSpaceException e)
