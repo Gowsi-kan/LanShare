@@ -24,6 +24,7 @@ sealed class Rig : IAsyncDisposable
     public SecurityContext ReceiverSecurity { get; } = SecurityContext.CreateEphemeral();
     public TransferService Receiver { get; }
     public bool Accept { get; set; } = true;
+    public ConflictHandling ConflictHandling { get; set; } = ConflictHandling.Rename;
 
     public Rig(IPairingUi? senderUi = null, IPairingUi? receiverUi = null)
     {
@@ -35,7 +36,7 @@ sealed class Rig : IAsyncDisposable
         Receiver = new TransferService("rig-receiver", ReceiverSecurity);
         Receiver.IncomingOffer += job =>
         {
-            if (Accept) job.Accept(Dst);
+            if (Accept) job.Accept(Dst, ConflictHandling);
             else job.Decline();
         };
         Receiver.Start();

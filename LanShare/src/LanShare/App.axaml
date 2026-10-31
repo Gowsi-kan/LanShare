@@ -23,24 +23,52 @@
         <FluentTheme />
 
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="#161A22" />
-            <Setter Property="BorderBrush" Value="#232834" />
+            <Setter Property="Background" Value="#121A29" />
+            <Setter Property="BorderBrush" Value="#253248" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="14" />
-            <Setter Property="Padding" Value="16" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18" />
         </Style>
         <Style Selector="TextBlock.muted">
-            <Setter Property="Foreground" Value="#8A93A6" />
+            <Setter Property="Foreground" Value="#9AA9BF" />
             <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="TextBlock.lbl">
-            <Setter Property="Foreground" Value="#6B7488" />
+            <Setter Property="Foreground" Value="#8292AB" />
             <Setter Property="FontSize" Value="10" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.val">
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.pageTitle">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#F3F6FC" />
+        </Style>
+        <Style Selector="TabControl.activityTabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TabItem.activityTab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="0,0,6,8" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#9AA9BF" />
+        </Style>
+        <Style Selector="TabItem.activityTab:selected">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#F3F6FC" />
+        </Style>
+        <Style Selector="TabItem.activityTab:pointerover">
+            <Setter Property="Background" Value="#19263A" />
         </Style>
 
         <Style Selector="Button.winbtn">
@@ -54,7 +82,7 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="Button.winbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#232834" />
+            <Setter Property="Background" Value="#253248" />
         </Style>
         <Style Selector="Button.winbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#2C3342" />
@@ -71,25 +99,61 @@
         </Style>
 
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="#4C8DFF" />
+            <Setter Property="Background" Value="#3978F6" />
             <Setter Property="Foreground" Value="White" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="16,9" />
         </Style>
         <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#6AA0FF" />
+            <Setter Property="Background" Value="#528BFF" />
             <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="Button.ghost">
-            <Setter Property="Background" Value="#1F2430" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background" Value="#1B2638" />
+            <Setter Property="BorderBrush" Value="#2B3A51" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
             <Setter Property="Padding" Value="14,8" />
         </Style>
+        <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#25344B" />
+            <Setter Property="Foreground" Value="#F3F6FC" />
+        </Style>
         <Style Selector="Button.danger">
-            <Setter Property="Background" Value="#3A1D24" />
-            <Setter Property="Foreground" Value="#FF8A97" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background" Value="#39212C" />
+            <Setter Property="Foreground" Value="#FF9AA8" />
+            <Setter Property="CornerRadius" Value="7" />
             <Setter Property="Padding" Value="14,8" />
+        </Style>
+
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#0D1421" />
+            <Setter Property="Foreground" Value="#E8EEF8" />
+            <Setter Property="BorderBrush" Value="#2B3A51" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="10,7" />
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="BorderBrush" Value="#5A91FF" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#0D1421" />
+            <Setter Property="Foreground" Value="#E8EEF8" />
+            <Setter Property="BorderBrush" Value="#2B3A51" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="8,5" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="#19263A" />
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="#1C3154" />
+            <Setter Property="Foreground" Value="#F3F6FC" />
+        </Style>
+        <Style Selector="ProgressBar">
+            <Setter Property="Background" Value="#263248" />
         </Style>
     </Application.Styles>
 </Application>
