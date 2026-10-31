@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore LanShare.slnx
+      - name: Build libraries and tests with warnings as errors
+        run: |
+          dotnet build src/LanShare.Core -c Release --no-restore -warnaserror
+          dotnet build src/LanShare.Web -c Release --no-restore -warnaserror
+          dotnet build tests/LanShare.Tests -c Release --no-restore -warnaserror
+      - name: Build everything (desktop app included)
+        run: dotnet build LanShare.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/LanShare.Tests -c Release --no-build --blame-hang-timeout 5m --logger "trx;LogFileName=results.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: "**/results.trx"
+
+  bench:
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true   # shared runners are noisy: report, don't block (see notes)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Benchmark (quick) against the committed CI baseline, if there is one
+        run: dotnet run -c Release --project bench/LanShare.Bench -- --quick --out bench-results.json --baseline bench/baseline.ci.json --tolerance 0.40
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench-results.json

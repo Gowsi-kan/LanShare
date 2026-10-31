@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "test", "type": "shell", "command": "dotnet test tests/LanShare.Tests -c Release",
+      "group": { "kind": "test", "isDefault": true }, "problemMatcher": "$msCompile" },
+    { "label": "bench gate", "type": "shell", "command": "scripts/bench-gate.sh", "problemMatcher": [] }
+  ]
+}

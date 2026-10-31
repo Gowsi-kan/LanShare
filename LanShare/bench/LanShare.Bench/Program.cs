@@ -44,6 +44,10 @@ for (int i = 0; i < args.Length; i++)
         case "--keep":
             keep = true;
             break;
+        case "--quick":
+            sizeMb = 256;
+            smallCount = 3000;
+            break;
         default:
             Console.Error.WriteLine($"Unknown argument {args[i]}");
             return 64;

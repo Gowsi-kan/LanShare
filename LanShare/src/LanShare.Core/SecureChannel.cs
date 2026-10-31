@@ -115,6 +115,10 @@ internal static class SecurityHandshake
             {
                 throw new IOException("The other device did not answer the security handshake.");
             }
+            catch (FormatException e)
+            {
+                throw new InvalidDataException("Malformed security handshake.", e);
+            }
         }
         if (trustsPeer && peerTrustsMe)
             return peerName;

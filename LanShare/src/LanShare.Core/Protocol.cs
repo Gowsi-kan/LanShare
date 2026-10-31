@@ -14,7 +14,7 @@ public enum Phase
     Cancelled,
     Declined,
     Paused,
-    Pairing
+    Pairing,
 }
 
 public enum Decision : byte
@@ -148,7 +148,23 @@ internal static class Wire
 
     public static Offer ReadOffer(BinaryReader r)
     {
-        var id = new Guid(r.ReadBytes(16));
+        try
+        {
+            return ReadOfferCore(r);
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException or OverflowException)
+        {
+            // BinaryReader reports a malformed string length (or similar) with these types: treat it as a protocol error
+            throw new InvalidDataException("Malformed offer.", e);
+        }
+    }
+
+    static Offer ReadOfferCore(BinaryReader r)
+    {
+        var idBytes = r.ReadBytes(16);
+        if (idBytes.Length != 16)
+            throw new EndOfStreamException();
+        var id = new Guid(idBytes);
         var name = r.ReadString();
         int streams = r.ReadInt32();
         int chunk = r.ReadInt32();

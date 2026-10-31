@@ -912,7 +912,7 @@ public sealed class WebShareServer(string deviceName, Func<string> downloadDir) 
             $"{q.Name}.{Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(q.Key)))[..10]}.lfsweb"
         );
 
-    static string? SafeName(string? raw)
+    internal static string? SafeName(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return null;

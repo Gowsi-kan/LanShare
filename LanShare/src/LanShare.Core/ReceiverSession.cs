@@ -621,6 +621,7 @@ public sealed class ReceiverSession : IDisposable
         }
         catch (EndOfStreamException) { }
         catch (IOException) { }
+        catch (FormatException) { }
         return map;
     }
 
@@ -638,13 +639,19 @@ public sealed class ReceiverSession : IDisposable
             var d = r.ReadBytes(chunks);
             return d.Length == chunks ? d : null;
         }
-        catch (Exception ex) when (ex is IOException or EndOfStreamException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or EndOfStreamException
+                        or FormatException
+                        or UnauthorizedAccessException
+            )
         {
             return null;
         }
     }
 
-    static string Resolve(string rootFull, string rel)
+    internal static string Resolve(string rootFull, string rel)
     {
         var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)
