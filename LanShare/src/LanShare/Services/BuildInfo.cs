@@ -7,8 +7,8 @@ public static class BuildInfo
 
     public static string Stamp =>
         Ticks == 0
-            ? "build ?"
-            : $"build {new DateTime(Ticks, DateTimeKind.Utc).ToLocalTime():dd MMM HH:mm}";
+            ? "Build ?"
+            : $"Build {new DateTime(Ticks, DateTimeKind.Utc).ToLocalTime():dd MMM HH:mm}";
 
     static long Compute()
     {

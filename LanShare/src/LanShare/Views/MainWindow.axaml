@@ -58,6 +58,10 @@
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     Classes="muted"
+                                    Text=" | " />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Classes="muted"
                                     Text="{Binding BuildStamp}" />
                             </StackPanel>
                         </Border>
