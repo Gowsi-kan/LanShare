@@ -1,185 +1,137 @@
-<div align="center">
+# LanShare
 
-# 📡 LanShare
+LanShare is a .NET 10 desktop application for transferring files between computers on a local network. It supports large files, folders, and batches of small files, with resumable transfers and a graphical Avalonia UI. An optional browser-based feature lets a phone upload files to the computer or download files the computer has shared.
 
-**Fast, resumable large-file transfer over your local network.**
+Transfers happen over the local network: there is no cloud relay or account required.
 
-![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
-![Avalonia 11](https://img.shields.io/badge/Avalonia-11-8B44AC)
-![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
-![Protocol](https://img.shields.io/badge/protocol-LFS2-orange)
+## Features
 
-</div>
+- Discover other LanShare computers on the LAN, or connect by entering an IP address.
+- Send files and folders over an encrypted, authenticated connection. Devices pair by comparing a short code; trusted device fingerprints are saved for future transfers.
+- Resume interrupted computer-to-computer transfers using per-file chunk state.
+- Bundle small files, use parallel streams, and optionally compress data with adaptive LZ4.
+- Pause, cancel, retry, and resume transfers; adjust the outgoing bandwidth limit.
+- Start optional phone access to upload files from a browser or download files shared by the desktop app. The UI provides a QR link and a PIN; incoming phone uploads can require approval. HTTPS is optional.
+- Check transfer integrity with XXH3 checksums.
 
-LanShare is a cross-platform desktop app for moving big files and huge folders between machines on the same LAN, with no cloud, no accounts and no USB stick. It uses a custom TCP protocol (**LFS2**) with parallel streams, adaptive compression and crash-safe resume, so a pulled cable or a cancelled transfer never means starting over.
+## Repository layout
 
-**Built with:** .NET 10 · Avalonia 11 · MVVM (CommunityToolkit.Mvvm) · raw async TCP · UDP discovery
-
----
-
-## ✨ Features
-
-- **Auto-tuned parallelism**: starts with 2 streams and adds more while throughput keeps improving (up to 8), or pin it manually (1–16).
-- **Adaptive LZ4 compression**: applied per chunk, only when it saves at least 10%; backs off automatically on incompressible data.
-- **Resume anywhere**: cancel, crash or cable pull, then *Retry / Resume* continues from the saved state.
-- **Small-file bundling**: thousands of tiny files are packed into bundles, with no per-file round trips.
-- **Live bandwidth limit**: adjustable in the UI (MB/s) and applied immediately across all streams and sessions.
-- **Integrity checks**: every chunk is verified with XXH3 before it is persisted.
-- **Peer discovery**: devices find each other via UDP broadcast, or add one by IPv4 address.
-- **Built-in firewall helper**: one click to open the required ports.
-- **Responsive UI**: the UI thread never blocks on disk or network.
-
----
-
-## 📁 Repository layout
+The solution and application projects live in the `LanShare/` subdirectory:
 
 ```text
-src/LanShare.Core     protocol, sender/receiver, discovery, firewall helper (library)
-src/LanShare          Avalonia desktop app
-bench/LanShare.Bench  repeatable loopback benchmark
-LanShare.slnx         solution (dotnet build LanShare.slnx)
+README.md                         This guide
+LICENSE                           MIT license
+LanShare/
+  LanShare.slnx                   .NET solution
+  Directory.Build.props           Shared .NET build settings
+  src/
+    LanShare.Core/                Transfer protocol, sender/receiver, discovery, security
+    LanShare.Web/                 Optional browser-based phone sharing server
+    LanShare/                     Avalonia desktop app and view models
+  tests/LanShare.Tests/           Protocol, transfer, resume, and security tests
+  bench/LanShare.Bench/           Loopback transfer benchmark
+  scripts/bench-gate.sh           Benchmark comparison helper
 ```
 
----
+## Requirements
 
-## 🚀 Getting started
+- .NET 10 SDK. The repository's `global.json` selects the .NET 10 SDK.
+- Windows or Linux for the desktop application.
+- A local network connection between devices for peer discovery and transfers.
 
-### Requirements
+## Build, run, and test
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (or .NET 9: change `net10.0` in `Directory.Build.props`)
-
-### Build & run
+Run these commands from the repository root:
 
 ```bash
-dotnet build LanShare.slnx
-dotnet run -c Release --project src/LanShare
+# Build the complete solution
+dotnet build LanShare/LanShare.slnx
+
+# Launch the desktop app
+dotnet run --project LanShare/src/LanShare -c Release
+
+# Run the test suite
+dotnet test LanShare/tests/LanShare.Tests/LanShare.Tests.csproj -c Release
 ```
 
-Run LanShare on both machines, pick the peer, choose files, and send.
+On both computers, launch LanShare, select a discovered peer (or add its IP address), choose files or folders, and start the transfer. The receiver can choose whether to accept the incoming transfer and where to save it. The default receive folder is `Downloads/LanShare`.
 
-### Publish a single-file executable
+### Publish a self-contained single-file app
 
 ```bash
-# Windows
-dotnet publish src/LanShare -c Release -r win-x64 --self-contained \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/win
+# Windows x64
+dotnet publish LanShare/src/LanShare -c Release -r win-x64 --self-contained \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+  -o publish/win
 
-# Linux
-dotnet publish src/LanShare -c Release -r linux-x64 --self-contained \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/linux
+# Linux x64
+dotnet publish LanShare/src/LanShare -c Release -r linux-x64 --self-contained \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+  -o publish/linux
 ```
 
----
+## Networking and firewall
 
-## 🔥 Firewall & networking
+| Purpose | Protocol | Default port |
+|---|---|---:|
+| Computer-to-computer transfer | TCP | `45454` |
+| Peer discovery | UDP | `45455` |
+| Optional phone/browser access | TCP | `45480` |
 
-| Purpose           | Protocol | Port    |
-| ----------------- | -------- | ------- |
-| File transfer     | TCP      | `45454` |
-| Peer discovery    | UDP      | `45455` |
+If a default TCP port is unavailable, the app can bind to another available port. Allow the ports used by the app through the host firewall on the local network. LanShare includes a firewall helper in the desktop UI.
 
-The app has a **Network access** card. If the ports are blocked, click **Allow through firewall**:
+Discovery uses UDP broadcast and may not work across Wi-Fi client isolation or VLANs. In that case, use **Add by IP address**. Phone access displays its active address, port, QR link, and PIN in the app.
 
-- **Windows**: prompts for UAC; rules are scoped to *Private* and *Domain* networks.
-- **Linux**: uses polkit/`pkexec` with firewalld or ufw.
+## How computer-to-computer transfers work
 
-**Manual equivalent:** allow inbound TCP 45454 and UDP 45455 on every machine.
+The transfer implementation is in `LanShare/src/LanShare.Core` and uses the LFS2 protocol:
 
-> **Discovery not working?** Wi-Fi client isolation or VLANs can block UDP broadcast. Use **Add by IPv4 address** instead.
+1. The computers find each other through UDP beacons, or the sender connects to an entered address.
+2. They establish a TLS connection and authenticate/pair devices using their certificate fingerprints and a displayed comparison code.
+3. The sender offers file metadata. After acceptance, the receiver returns saved chunk state so the sender can skip data already received.
+4. Files are divided into 2 MiB chunks. Parallel data streams read and hash chunks, optionally compress them, send frames, and wait for receiver acknowledgements.
+5. The receiver verifies each chunk before writing it. A failed data stream reconnects and requeues unacknowledged chunks.
 
----
+Large files are written to temporary `.lfspart` files, with `.lfsstate` metadata used for resuming. Small files (up to 256 KiB each) are packed into bundles and tracked in a batch journal. On completion, received files are finalized into the destination folder.
 
-## 🧠 How it works: the LFS2 protocol
+## Performance and benchmarking
 
-<details>
-<summary><b>Connections & framing</b></summary>
+- Auto mode starts with two streams and adds streams while measured throughput improves, up to eight. Stream count can also be set manually.
+- Each stream can have up to eight unacknowledged frames in flight.
+- Adaptive LZ4 compression backs off when data is not compressible or compression costs more than it is expected to save.
+- Small files are bundled to reduce per-file network overhead.
+- Receiver resume checkpoints are written periodically (about every 30 seconds during active transfers).
+- The benchmark reports throughput and verifies transferred files. Its loopback results measure local CPU, storage, and protocol overhead; they are not a prediction of Wi-Fi or LAN throughput.
 
-- **Control connection:** `LFS2|kind=1` → `Offer` (files, sizes, keys) → `Answer` (accept / decline / no-space, plus per-file resume bitmaps) → … → `Done`.
-- **Data connections** (auto-tuned 2..8, or fixed 1..16): `LFS2|kind=2|sessionId`, then frames:
-
-  ```text
-  [fileIdx i32][chunkIdx i32][rawLen i32][wireLen i32][xxh3(raw) u64][payload]
-  ```
-
-  The receiver acks 1 byte per frame, in order, after decompress, verify and persist. `wireLen < rawLen` means the payload is LZ4-compressed.
-- **Bundles:** `fileIdx = -1` marks a bundle, with many small files (≤ 256 KiB) packed into one frame.
-
-</details>
-
-<details>
-<summary><b>Pipelining & reliability</b></summary>
-
-- Per stream: read/hash/compress → socket write → ack reader, with up to **4 unacked frames** in flight. The receiver mirrors this (reader → channel → writer), so network and disk overlap on both ends.
-- Files are split into **2 MiB chunks** served from a shared queue. If a stream fails, its unacked chunks are re-queued and the stream reconnects.
-
-</details>
-
-<details>
-<summary><b>Receiver & resume</b></summary>
-
-- Pre-allocated `.lfspart` file with random-access writes.
-- `.lfsstate` bitmap (flush data → atomic bitmap replace), then rename on completion.
-- Small files are written whole and tracked in a per-batch journal (`.lfs-<id>.journal`, removed on success).
-- Cancel, crash or cable pull → **Retry / Resume** continues from the saved state.
-
-</details>
-
-<details>
-<summary><b>Security of paths</b></summary>
-
-Paths received from the peer are sanitized: no `..`, no rooted paths, and no escaping the target folder.
-
-</details>
-
----
-
-## ⚡ Performance
-
-| Feature             | Behavior |
-| ------------------- | -------- |
-| **Auto-tune**       | Starts with 2 streams, adds one while throughput improves ≥ 8%, then settles (max 8). |
-| **Compression**     | Adaptive LZ4 per chunk; needs ≥ 10% savings, backs off for 64 chunks after 4 misses. |
-| **Bandwidth limit** | Shared token-style limiter across all streams/sessions, adjustable live (MB/s). |
-| **Small files**     | Packed into bundles: no per-file round trips and no per-file open handles on the receiver. |
-
-### Benchmark
+Run a short benchmark from the repository root:
 
 ```bash
-# Create a baseline
-dotnet run -c Release --project bench/LanShare.Bench -- --size-mb 1024 --small-count 20000 --out base.json
-
-# Later, after changes: compare against it
-dotnet run -c Release --project bench/LanShare.Bench -- --baseline base.json --tolerance 0.15
+dotnet run -c Release --project LanShare/bench/LanShare.Bench -- --quick
 ```
 
-The benchmark runs over loopback, so it measures CPU, disk and protocol overhead rather than your NIC. It verifies every file by hash and **exits with code 2 on regression**.
+For a repeatable comparison on Linux, use the benchmark gate from the solution directory:
 
----
+```bash
+cd LanShare
+scripts/bench-gate.sh --save  # record a baseline on an otherwise idle machine
+scripts/bench-gate.sh         # run and compare against that baseline
+```
 
-## 🛡️ Hang & stuck-state protections
+The gate defaults to `/dev/shm` for a lower-variance run. Use `BENCH_MODE=disk scripts/bench-gate.sh` to benchmark against the normal filesystem. See the script comments for options such as benchmark size and directory.
 
-- The UI thread never blocks on disk or network: free-space probe, file scanning, session construction and shutdown all run off-thread.
-- **Sender:** 120 s ack watchdog per stream (alive-but-stalled receiver → reconnect and resend).
-- **Receiver:** fails a session if the sender opens no data streams for 90 s, or delivers nothing for 5 min.
-- The bandwidth limiter re-evaluates every 250 ms, so lowering or removing the limit applies immediately.
-- A transfer at 100% shows *"Finalizing - flushing to disk"* until the receiver has fsynced and renamed the file.
+## Phone/browser access
 
----
+Phone access is separate from the LFS2 computer-to-computer protocol. When enabled in the desktop app, it starts a local web server and displays a QR link and PIN. A phone on the same network can use the browser to send files to the computer or download files selected for sharing. Upload approval can be enabled in the UI, and HTTPS can be selected when starting the server.
 
-## ⚠️ Current limitations
+The browser server uses a temporary access token and PIN each time it starts. HTTP does not encrypt browser traffic; enable HTTPS when encryption is needed and the phone accepts the certificate.
 
-LanShare is designed for **trusted LANs**. Not included yet:
+## Security notes
 
-- [ ] Encryption / authentication (currently relies on a trusted network plus an explicit accept prompt)
-- [ ] Settings persistence
-- [ ] Whole-file end-to-end hash
+- Computer-to-computer transfers use TLS and device pairing. The app persists its device identity and trusted-device fingerprints in the user's application data directory.
+- Incoming transfers still require receiver acceptance unless auto-accept is enabled.
+- The optional browser server is a separate service. Keep it limited to trusted networks; use HTTPS for encrypted browser connections.
+- Paths supplied by a peer are validated to prevent writes outside the chosen destination folder.
 
----
+## License
 
-## 🤝 Contributing
-
-Issues and pull requests are welcome. Before opening a PR, run the benchmark against a baseline to make sure performance hasn't regressed.
-
-## 📄 License
-
-Released under the [MIT License](LICENSE).
+LanShare is released under the [MIT License](LICENSE).
