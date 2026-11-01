@@ -68,6 +68,46 @@ public sealed class TransferHistoryStore(string path)
         }
     }
 
+    public static void WriteCsv(
+        TextWriter writer,
+        IEnumerable<TransferHistoryRecord> records
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(records);
+
+        writer.WriteLine(
+            "id,completed_at_utc,direction,peer,summary,total_bytes,outcome,error,location"
+        );
+        foreach (var record in records)
+        {
+            writer.WriteLine(
+                string.Join(
+                    ',',
+                    Csv(record.Id.ToString("D")),
+                    Csv(record.CompletedAt.UtcDateTime.ToString("O")),
+                    Csv(record.Direction),
+                    Csv(record.Peer),
+                    Csv(record.Summary),
+                    Csv(record.TotalBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    Csv(record.Outcome),
+                    Csv(record.Error ?? ""),
+                    Csv(record.Location ?? "")
+                )
+            );
+        }
+    }
+
+    static string Csv(string value)
+    {
+        // Prefix spreadsheet formula markers so untrusted peer/error text stays inert when opened in spreadsheet software.
+        var trimmed = value.AsSpan().TrimStart();
+        if (!trimmed.IsEmpty && trimmed[0] is '=' or '+' or '-' or '@')
+            value = "'" + value;
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
+    }
+
     void EnsureLoaded()
     {
         if (_loaded)

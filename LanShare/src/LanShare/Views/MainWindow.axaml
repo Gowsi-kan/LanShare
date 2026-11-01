@@ -513,10 +513,20 @@
                             </TabItem>
                             <TabItem Classes="activityTab" Header="{Binding HistoryCountText}">
                                 <Grid RowDefinitions="Auto,*" RowSpacing="10">
-                                    <TextBox
+                                    <Grid
                                         Margin="14,0"
-                                        Watermark="Search history…"
-                                        Text="{Binding HistoryQuery, UpdateSourceTrigger=PropertyChanged}" />
+                                        ColumnDefinitions="*,Auto"
+                                        ColumnSpacing="8">
+                                        <TextBox
+                                            Watermark="Search history…"
+                                            Text="{Binding HistoryQuery, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Classes="ghost small"
+                                            Click="OnExportHistory"
+                                            Content="Export CSV"
+                                            ToolTip.Tip="Export the complete local transfer history, including peer names, errors, and locations." />
+                                    </Grid>
                                     <Grid Grid.Row="1">
                                         <ScrollViewer IsVisible="{Binding HasFilteredHistory}">
                                             <ItemsControl ItemsSource="{Binding FilteredHistory}">

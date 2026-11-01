@@ -49,6 +49,34 @@ Manual equivalent: allow inbound **TCP 45454** and **UDP 45455** on every machin
     dotnet run -c Release --project bench/LanShare.Bench -- --baseline base.json --tolerance 0.15
 Runs over loopback (measures CPU/disk/protocol overhead, not your NIC). Verifies every file by hash; exit 2 on regression.
 
+## Audit export
+In the History tab, choose **Export CSV** to save the complete local history (up to 500 records),
+including UTC completion time, transfer direction, peer, outcome, error, and saved location.
+The export is UTF-8 CSV and quotes fields; spreadsheet formula markers are neutralized. Treat the
+export as sensitive because it can contain device names, file summaries, errors, and local paths.
+
+## Release signatures
+When a GitHub release is published, `../.github/workflows/release-signing.yml` verifies its SHA-256
+manifest and creates detached GPG signatures for the ZIP, TAR.GZ, and checksum manifest. It also
+attaches the public signing key. Configure these GitHub repository settings before publishing:
+
+- Actions secret `RELEASE_GPG_PRIVATE_KEY`: ASCII-armored private key.
+- Actions secret `RELEASE_GPG_PASSPHRASE`: passphrase for that key.
+- Actions variable `RELEASE_GPG_KEY_ID`: full signing-key fingerprint.
+
+First compare the key's fingerprint against a separately trusted copy published by the maintainer.
+Then verify the release assets (replace the sample version with the downloaded release):
+
+    gpg --show-keys --with-fingerprint LanShare-Release-Signing-Key.asc
+    gpg --import LanShare-Release-Signing-Key.asc
+    gpg --verify LanShare-v2.0.0-win-x64.zip.asc LanShare-v2.0.0-win-x64.zip
+    gpg --verify LanShare-v2.0.0-linux-x64.tar.gz.asc LanShare-v2.0.0-linux-x64.tar.gz
+    gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+    sha256sum --check SHA256SUMS.txt
+
+These are detached release-asset signatures, not Windows Authenticode signatures. LanShare does not
+currently have an in-app updater or verify updates automatically.
+
 ## Hang / stuck-state protections
 - UI thread never blocks on disk/network: free-space probe, file scanning, session construction and shutdown all run off-thread.
 - Sender: 120 s ack watchdog per stream (alive-but-stalled receiver -> reconnect + resend).
@@ -57,4 +85,4 @@ Runs over loopback (measures CPU/disk/protocol overhead, not your NIC). Verifies
 - A transfer at 100% shows "Finalizing - flushing to disk" until the receiver has fsynced and renamed the file.
 
 ## Not included (yet)
-Encryption/auth (trusted LAN + explicit accept prompt), settings persistence, whole-file end-to-end hash.
+Automatic update checking, in-app signature verification, Windows Authenticode signing, and whole-file end-to-end hash.

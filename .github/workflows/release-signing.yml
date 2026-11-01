@@ -1,0 +1,61 @@
+name: sign-release-assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir dist
+
+      - name: Import signing key and verify release checksums
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+          RELEASE_GPG_KEY_ID: ${{ vars.RELEASE_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELEASE_GPG_PRIVATE_KEY" || -z "$RELEASE_GPG_PASSPHRASE" || -z "$RELEASE_GPG_KEY_ID" ]]; then
+            echo "::error::Configure RELEASE_GPG_PRIVATE_KEY and RELEASE_GPG_PASSPHRASE secrets and the RELEASE_GPG_KEY_ID repository variable."
+            exit 1
+          fi
+          printf '%s' "$RELEASE_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$RELEASE_GPG_KEY_ID" >/dev/null
+          mapfile -d '' assets < <(find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) -print0)
+          if [[ ${#assets[@]} -ne 2 || ! -f dist/SHA256SUMS.txt ]]; then
+            echo "::error::Expected one ZIP, one TAR.GZ, and SHA256SUMS.txt in the GitHub release."
+            exit 1
+          fi
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          gpg --batch --armor --export "$RELEASE_GPG_KEY_ID" > dist/LanShare-Release-Signing-Key.asc
+
+      - name: Sign release assets
+        env:
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+          RELEASE_GPG_KEY_ID: ${{ vars.RELEASE_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          for asset in dist/*.zip dist/*.tar.gz dist/SHA256SUMS.txt; do
+            printf '%s' "$RELEASE_GPG_PASSPHRASE" | \
+              gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+                --local-user "$RELEASE_GPG_KEY_ID" \
+                --armor --detach-sign \
+                --output "$asset.asc" "$asset"
+          done
+
+      - name: Upload signatures and public signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" dist/*.asc --repo "$GITHUB_REPOSITORY" --clobber
