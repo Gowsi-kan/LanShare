@@ -101,6 +101,7 @@ Fast, resumable large-file transfer over your LAN.
 - **Windows:** ``LanShare-$Tag-win-x64.zip``
 - **Linux:** ``LanShare-$Tag-linux-x64.tar.gz`` (after extracting, run ``chmod +x LanShare``)
 - Checksums: ``SHA256SUMS.txt``
+- Detached GPG signatures and the public signing key are attached after publishing when release signing is configured.
 
 ### Highlights
 - TLS-protected computer-to-computer transfers with device pairing.

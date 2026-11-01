@@ -19,6 +19,7 @@ Transfers happen over the local network: there is no cloud relay or account requ
 - Review, reorder, and queue outgoing batches; queued batches run one at a time while each transfer keeps its parallel-stream tuning.
 - Review incoming file names and choose to rename conflicts, keep existing files, or replace them after the new copy is complete.
 - Search local transfer history and queue an in-session retry or reopen a saved destination.
+- Export the local transfer history as a structured CSV audit file.
 - Start optional phone access to upload files from a browser or download files shared by the desktop app. The UI provides a QR link and a PIN; incoming phone uploads can require approval. HTTPS is optional.
 - Check transfer integrity with XXH3 checksums.
 
@@ -112,6 +113,7 @@ Large files are written to temporary `.lfspart` files, with `.lfsstate` metadata
 - The benchmark reports throughput and verifies transferred files. Its loopback results measure local CPU, storage, and protocol overhead; they are not a prediction of Wi-Fi or LAN throughput.
 
 The desktop app stores up to 500 transfer-history records locally. History stores transfer summaries and receive destinations, not outgoing file paths; retry is available for outgoing transfers while their source files remain available in the current app session.
+Use **Export CSV** in the History tab to export those records, including peer names, outcomes, errors, and receive locations. Treat the export as sensitive. CSV fields are quoted and spreadsheet formula markers are neutralized.
 
 Run a short benchmark from the repository root:
 
@@ -128,6 +130,14 @@ scripts/bench-gate.sh         # run and compare against that baseline
 ```
 
 The gate defaults to `/dev/shm` for a lower-variance run. Use `BENCH_MODE=disk scripts/bench-gate.sh` to benchmark against the normal filesystem. See the script comments for options such as benchmark size and directory.
+
+## Release signatures
+
+The release-signing workflow verifies the published SHA-256 manifest and attaches detached GPG
+signatures for the release archives and checksum file. Configure the signing secrets and key
+fingerprint as described in [the release-signing instructions](LanShare/README.md#release-signatures).
+These signatures authenticate release assets; they are not Windows Authenticode signatures, and
+the app does not currently verify updates automatically.
 
 ## Phone/browser access
 

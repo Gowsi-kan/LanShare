@@ -1,9 +1,11 @@
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using LanShare.Core;
 using LanShare.ViewModels;
 
 namespace LanShare.Views;
@@ -129,6 +131,37 @@ public partial class MainWindow : Window
             );
             if (res.Count > 0 && res[0].TryGetLocalPath() is { } p)
                 Vm.DownloadDir = p;
+        }
+        catch (Exception ex)
+        {
+            Vm.ReportError(ex.Message);
+        }
+    }
+
+    async void OnExportHistory(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = "Export transfer audit",
+                    SuggestedFileName = $"LanShare-audit-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv",
+                    DefaultExtension = "csv",
+                    FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }],
+                }
+            );
+            if (file is null)
+                return;
+
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(
+                stream,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)
+            );
+            TransferHistoryStore.WriteCsv(writer, Vm.History.Select(item => item.Record));
+            await writer.FlushAsync();
+            Vm.StatusMessage = $"Exported {Vm.History.Count} transfer records.";
         }
         catch (Exception ex)
         {

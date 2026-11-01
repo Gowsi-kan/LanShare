@@ -44,6 +44,31 @@ public sealed class TransferHistoryTests : IDisposable
         Assert.Equal(records[^1], loaded[0]);
     }
 
+    [Fact]
+    public void HistoryCsv_EscapesFieldsAndNeutralizesSpreadsheetFormulas()
+    {
+        var record = NewRecord(DateTimeOffset.Parse("2026-11-01T00:00:00+00:00"), "one, \"two\"\nthree")
+            with
+            {
+                Peer = "=HYPERLINK(\"https://example.invalid\")",
+                Error = "  @SUM(1,1)",
+                Location = "/tmp/received file",
+            };
+        using var output = new StringWriter();
+
+        TransferHistoryStore.WriteCsv(output, [record]);
+
+        var csv = output.ToString();
+        Assert.StartsWith(
+            "id,completed_at_utc,direction,peer,summary,total_bytes,outcome,error,location",
+            csv
+        );
+        Assert.Contains("\"'=HYPERLINK(\"\"https://example.invalid\"\")\"", csv);
+        Assert.Contains("\"one, \"\"two\"\"\nthree\"", csv);
+        Assert.Contains("\"'  @SUM(1,1)\"", csv);
+        Assert.Contains("\"/tmp/received file\"", csv);
+    }
+
     static TransferHistoryRecord NewRecord(DateTimeOffset completedAt, string summary) =>
         new(Guid.NewGuid(), completedAt, "Sent", "peer", summary, 42, "Completed", null, null);
 }
